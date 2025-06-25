@@ -2,6 +2,8 @@
 This code is from MDS_Kara_One, by Matt-Golightly, many thanks to him! It was his code that helped me with this whole project, love you! Thank you!
 
 we use raw=True !!! remember!
+This code is very complex, you do not need to understand, just run the data processing can be!
+
 
  This is an adaptation of the work by Wojciech Błądek https://github.com/wjbladek/SilentSpeechClassifier, used for automated
   data handling for the KARA ONE open source EEG data on imagined speech.
