@@ -42,4 +42,5 @@ To prevent any potential data leakage, the data loading and processing pipeline 
     All data processing is done dynamically within each training fold. No precomputed shared artifacts (e.g., global PCA, scaling) are reused across folds.)
     
 finally, if you have any question,please concat me  Wechat：CMU_ann (15291835753), email:xduann@163.com 
-and my telephone number:+86 15291835753
+
+and my telephone number:+86 15291835753，You're more than welcome to come see me and discuss your problems！
