@@ -186,7 +186,7 @@ def extract_features_and_labels(df, label_col='condition', epoch_col='epoch', ti
 
 def augment_data_eeg_minimal(data, noise_level=0.3, max_shift=15):
     """
-    对 EEG 数据 (B, C, T) 进行简化增强（加噪 + 时间平移）。
+    对 EEG 数据 (B, C, T) 进行简化增强（加噪 + 时间平移），这个项目中没有用到
 
     参数:
     - data: ndarray, EEG 信号，形状为 (n_trials, n_channels, n_samples)
@@ -231,7 +231,7 @@ def augment_data_eeg_bandwise(
         mask_length=20
 ):
     """
-    针对不同频段特征类型的 EEG 增强：
+    针对不同频段特征类型的 EEG 增强：（这个项目中没有用到）
     - band 0: beta 原始 EEG（保留相位）
     - band 1: low-gamma envelope
     - band 2: high-gamma envelope
@@ -291,7 +291,7 @@ def augment_data_eeg_bandwise(
 
 def mix_and_expand_data(train_x, train_y, augmentation_function, augment_ratio=0.3):
     """
-    混合和扩展数据
+    混合和扩展数据 （这个项目中没有用到）
     """
     total_samples = len(train_x)
     num_augmented = int(total_samples * augment_ratio)
@@ -316,7 +316,7 @@ def mix_and_expand_data(train_x, train_y, augmentation_function, augment_ratio=0
 
 def mix_and_expand_data_with_subjects(train_x, train_y, subject_labels, augmentation_function, augment_ratio=0.3):
     """
-    对 EEG 数据和 subject_labels 一起做增强和扩展。
+    对 EEG 数据和 subject_labels 一起做增强和扩展。（这个项目中没有用到）
     """
     total_samples = len(train_x)
     num_augmented = int(total_samples * augment_ratio)
@@ -566,7 +566,7 @@ class SqueezeExcite(nn.Module):
         return x
 
 
-class DenseNet1D(nn.Module):
+class TeleProNet(nn.Module):
     def __init__(self, in_channels=48, mid_channels=64, hidden_dims=[64, 64],
                  dropout_rate=0.1, num_classes=11):
         super().__init__()
@@ -705,7 +705,7 @@ class EEGRegionModel(nn.Module):
 
         self.num_bands = 6
 
-        self.convLSTM1 = DenseNet1D()
+        self.TeleNet = TeleProNet()
 
         self.pos_embedding = nn.Parameter(torch.randn(1, 3844, 128))
 
@@ -723,7 +723,7 @@ class EEGRegionModel(nn.Module):
         beta_input = x[:, 2]
         gamma_input = x[:, 3]
 
-        output = self.convLSTM1(delta_input, mu_input, beta_input, gamma_input)
+        output = self.TeleNet(delta_input, mu_input, beta_input, gamma_input)
 
         return output
 
@@ -890,7 +890,7 @@ def create_episode(X, y, n_way=11, k_shot=5, q_query=10):
 
 def create_episode_diverse_support_fixed_query_subject(X, y, subject_labels, n_way=11, k_shot=5, q_query=10):
     """
-    - Support: 来自不同的受试者，每个样本一个受试
+    - Support: 来自不同的受试者，每个样本一个受试 （这个函数在项目中没有用到）
     - Query: 从一个未被 support 使用的受试者中选取
     """
     import torch
