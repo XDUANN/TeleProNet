@@ -1,0 +1,1493 @@
+import os
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
+import argparse
+from scipy.signal import firwin, filtfilt
+from scipy.signal import firwin, lfilter, filtfilt
+from scipy.stats import pearsonr
+from sklearn.ensemble import RandomForestClassifier
+import os
+from torch.utils.data import DataLoader, TensorDataset
+from scipy.ndimage import gaussian_filter1d
+from mne.filter import resample
+import math
+import librosa
+from sklearn.preprocessing import StandardScaler
+from scipy.signal import welch, csd
+from sklearn.manifold import TSNE
+# from torchdiffeq import odeint
+gpus = [0]
+os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, gpus))
+import numpy as np
+import math
+import glob
+from scipy.signal import savgol_filter
+from scipy.signal import medfilt
+import random
+import itertools
+from scipy.signal import butter, filtfilt
+from scipy.signal import hilbert
+import dtcwt
+from dtcwt import Pyramid
+from dtcwt.numpy import Transform1d
+from scipy.fft import fft, ifft
+# from scipy.signal import resample
+from joblib import Parallel, delayed
+import numpy as np
+import datetime
+import time
+import datetime
+import sys
+import scipy.io
+from sklearn.model_selection import train_test_split
+import torchvision.transforms as transforms
+from torchvision.utils import save_image, make_grid
+from scipy.signal import cheby1, filtfilt
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, cohen_kappa_score, recall_score, precision_score, f1_score
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.decomposition import PCA
+import seaborn as sns
+import mne
+from collections import Counter
+from torch.utils.data import DataLoader
+from torch.autograd import Variable
+from torchsummary import summary
+import torch.autograd as autograd
+from torch.nn.utils import weight_norm
+from torchvision.models import vgg19
+import scipy.io as spio
+import torch.nn as nn
+import torch.nn.functional as F
+import torch
+import torch.nn.init as init
+from sklearn.metrics import precision_score, recall_score, f1_score, matthews_corrcoef
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import Dataset
+from PIL import Image
+import torchvision.transforms as transforms
+from sklearn.decomposition import PCA
+from sklearn.metrics import accuracy_score, cohen_kappa_score
+import torch
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+from sklearn.utils import shuffle
+from torch import nn
+import pickle
+from torch import Tensor
+from PIL import Image
+from torchvision.transforms import Compose, Resize, ToTensor
+from einops import rearrange, reduce, repeat
+from einops.layers.torch import Rearrange, Reduce
+# from common_spatial_pattern import csp
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import StratifiedKFold
+# from torch.utils.tensorboard import SummaryWriter
+from torch.backends import cudnn
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
+# from tensorflow.keras.utils import to_categorical
+from joblib import Parallel, delayed
+import gc
+from sklearn.model_selection import KFold
+
+gc.collect()
+import psutil
+
+print(f"Available Memory: {psutil.virtual_memory().available / (1024 ** 2)} MB")
+print(f"Available Memory: {psutil.virtual_memory().available / (1024 ** 3):.2f} GB")
+
+cudnn.benchmark = False
+cudnn.deterministic = True
+
+
+def load_data(path, file_name):
+    file_path = os.path.join(path, file_name)
+    df = pd.read_pickle(file_path)
+    return df
+
+
+def extract_features_and_labels(df, label_col='condition', epoch_col='epoch', time_col='time'):
+    # 显式定义电极通道列名（根据您的实际列名）
+    channel_columns = [
+        # Group 1 – Broca's & Wernicke's Area
+        'FT8', 'T7', 'P3', 'C3', 'C5', 'C4', 'FC6', 'F5', 'F3', 'FC3', 'FC5',
+        # Group 2 – Motor Cortex
+        'C3', 'C5', 'C1', 'CZ', 'C2', 'C4', 'FC1', 'FCZ', 'FC2', 'FC6', 'FC4',
+        # Group 3 – Frontal Lobe
+        'F1', 'FZ', 'F2', 'F4', 'F6', 'FCZ', 'FC2', 'FPZ', 'FP2', 'AF3', 'AF4',
+        # Group 4 – Parietal & Occipital Lobes
+        'P1', 'P2', 'P4', 'PZ', 'POZ', 'PO4', 'PO6', 'CP3', 'CP5', 'CP1', 'CPZ',
+        # Group 5 – Insular Approx. Area
+        'F8', 'T8', 'TP8', 'P8'
+    ]
+
+    # 清理标签格式（移除斜杠）
+    df[label_col] = df[label_col].str.replace('/', '')
+
+    # 定义 event_id 映射（根据清理后的标签）
+    event_id = {
+        'iy': 0,
+        'uw': 1,
+        'piy': 2,
+        'tiy': 3,
+        'diy': 4,
+        'm': 5,
+        'n': 6,
+        'pat': 7,
+        'pot': 8,
+        'knew': 9,
+        'gnaw': 10
+    }
+
+    X, y = [], []
+
+    # 按epoch分组
+    df_grouped = df.groupby(epoch_col)
+
+    for epoch, group in df_grouped:
+        # 验证标签唯一性
+        labels = group[label_col].unique()
+        if len(labels) != 1:
+            print(f"Epoch {epoch} 存在多个标签: {labels}，已跳过")
+            continue
+        label = labels[0]
+
+        # 检查标签是否有效
+        if label not in event_id:
+            print(f"Epoch {epoch} 的标签 {label} 未定义，已跳过")
+            continue
+
+        # 提取特征（显式选择电极通道）
+        features = group[channel_columns].values.T  # (62, T)
+        X.append(features)
+        y.append(event_id[label])
+
+        # 调试信息
+        # print(f"Epoch {epoch} 特征形状: {features.shape}, 标签: {label}")
+
+    X = np.array(X)
+    y = np.array(y)
+
+    print(f"特征矩阵形状: {X.shape}")
+    print(f"标签形状: {y.shape}")
+    return X, y
+
+
+def augment_data_eeg_minimal(data, noise_level=0.3, max_shift=15):
+    """
+    对 EEG 数据 (B, C, T) 进行简化增强（加噪 + 时间平移）。
+
+    参数:
+    - data: ndarray, EEG 信号，形状为 (n_trials, n_channels, n_samples)
+    - noise_level: float, 噪声标准差
+    - max_shift: int, 最大时间平移量（向前或向后）
+
+    返回:
+    - augmented_data: ndarray, 增强后的 EEG 数据，形状相同 (B, C, T)
+    """
+    B, C, T = data.shape
+    augmented_data = np.zeros_like(data, dtype=np.float32)
+
+    for i in range(B):
+        for c in range(C):
+            signal = data[i, c]
+
+            # Step 1: 加高斯噪声
+            noise = np.random.normal(0, noise_level, size=T)
+            signal_noisy = signal + noise
+
+            # Step 2: 时间平移
+            shift = np.random.randint(-max_shift, max_shift + 1)
+            signal_shifted = np.roll(signal_noisy, shift)
+
+            # 边缘补0
+            if shift > 0:
+                signal_shifted[:shift] = 0
+            elif shift < 0:
+                signal_shifted[shift:] = 0
+
+            augmented_data[i, c] = signal_shifted
+
+    return augmented_data
+
+
+def augment_data_eeg_bandwise(
+        data,
+        beta_noise_level=0.1,
+        env_noise_level=0.3,
+        max_shift=15,
+        mask_prob=0.3,
+        mask_length=20
+):
+    """
+    针对不同频段特征类型的 EEG 增强：
+    - band 0: beta 原始 EEG（保留相位）
+    - band 1: low-gamma envelope
+    - band 2: high-gamma envelope
+
+    返回：
+    - shape (B, 3, C, T)
+    """
+    B, bands, C, T = data.shape
+    assert bands == 3, "需要输入 6 个频段（beta, low-gamma, high-gamma）"
+
+    augmented = np.zeros_like(data, dtype=np.float32)
+
+    for b in range(B):
+        for band in range(bands):
+            for c in range(C):
+                signal = data[b, band, c].copy()
+
+                # 设置当前频段的参数
+                if band == 0:
+                    noise_level = beta_noise_level
+                    apply_freq_dropout = False
+                else:
+                    noise_level = env_noise_level
+                    apply_freq_dropout = False  # envelope 禁止频谱 dropout
+
+                # 1. 加噪声
+                noise = np.random.normal(0, noise_level, size=T)
+                signal += noise
+
+                # 2. 时间平移
+                shift = np.random.randint(-max_shift, max_shift + 1)
+                signal = np.roll(signal, shift)
+                if shift > 0:
+                    signal[:shift] = 0
+                elif shift < 0:
+                    signal[shift:] = 0
+
+                # 3. 遮挡
+                if np.random.rand() < mask_prob and T > mask_length:
+                    start = np.random.randint(0, T - mask_length)
+                    signal[start:start + mask_length] = 0
+
+                # 4.（可选）频谱 dropout（仅限 beta 使用）
+                if apply_freq_dropout:
+                    spectrum = fft(signal)
+                    num_freq = len(spectrum) // 2
+                    drop_len = int(num_freq * 0.2)
+                    drop_start = np.random.randint(1, num_freq - drop_len)
+                    spectrum[drop_start:drop_start + drop_len] = 0
+                    spectrum[-(drop_start + drop_len):-drop_start] = 0
+                    signal = np.real(ifft(spectrum))
+
+                augmented[b, band, c] = signal
+
+    return augmented
+
+
+def mix_and_expand_data(train_x, train_y, augmentation_function, augment_ratio=0.3):
+    """
+    混合和扩展数据
+    """
+    total_samples = len(train_x)
+    num_augmented = int(total_samples * augment_ratio)
+
+    # 随机选择需要增强的样本索引
+    indices_to_augment = np.random.choice(total_samples, size=num_augmented, replace=False)
+
+    # 提取需要增强的数据
+    x_to_augment = train_x[indices_to_augment]
+    y_to_augment = train_y[indices_to_augment]
+
+    # 对选择的数据进行增强
+    x_augmented = augmentation_function(x_to_augment)
+    y_augmented = np.copy(y_to_augment)  # 标签保持一致
+
+    # 合并原始数据和增强数据
+    x_combined = np.concatenate([train_x, x_augmented], axis=0)
+    y_combined = np.concatenate([train_y, y_augmented], axis=0)
+
+    return x_combined, y_combined
+
+
+def mix_and_expand_data_with_subjects(train_x, train_y, subject_labels, augmentation_function, augment_ratio=0.3):
+    """
+    对 EEG 数据和 subject_labels 一起做增强和扩展。
+    """
+    total_samples = len(train_x)
+    num_augmented = int(total_samples * augment_ratio)
+
+    # 随机选择需要增强的样本索引
+    indices_to_augment = np.random.choice(total_samples, size=num_augmented, replace=False)
+
+    # 提取需要增强的数据
+    x_to_augment = train_x[indices_to_augment]
+    y_to_augment = train_y[indices_to_augment]
+    subj_to_augment = subject_labels[indices_to_augment]
+
+    # 做增强
+    x_augmented = augmentation_function(x_to_augment)
+    y_augmented = np.copy(y_to_augment)
+    subj_augmented = np.copy(subj_to_augment)
+
+    # 合并所有
+    x_combined = np.concatenate([train_x, x_augmented], axis=0)
+    y_combined = np.concatenate([train_y, y_augmented], axis=0)
+    subj_combined = np.concatenate([subject_labels, subj_augmented], axis=0)
+
+    return x_combined, y_combined, subj_combined
+
+
+def segment_data_and_labels(data, labels, window_size=900, step_size=250):
+    """
+    对多频带 EEG 数据进行分割，并扩展标签以匹配分割后的数据。
+
+    参数:
+    data: 输入的 EEG 数据，形状为 (n_trials, 2, n_channels, n_bands, n_samples)
+    labels: 输入的标签，形状为 (n_trials,)
+    window_size: 每个窗口的大小（时间步长）
+    step_size: 窗口之间的步长
+
+    返回:
+    segmented_data: 分割后的 EEG 数据，形状为 (n_windows, 2, n_channels, n_bands, window_size)
+    expanded_labels: 扩展后的标签，形状为 (n_windows,)
+    """
+    n_trials, n_channels, n_samples = data.shape[0], data.shape[2], data.shape[3]
+    segmented_data = []
+    expanded_labels = []
+
+    for trial_idx in range(n_trials):
+        trial_data = data[trial_idx]  # 形状为 (2, n_channels, n_bands, n_samples)
+        trial_label = labels[trial_idx]
+
+        # 对每个 trial 的数据按时间步进行分割
+        for start in range(0, n_samples - window_size + 1, step_size):
+            # 取当前窗口的数据，形状为 (2, n_channels, n_bands, window_size)
+            window_data = trial_data[:, :, start:start + window_size]
+            segmented_data.append(window_data)
+            expanded_labels.append(trial_label)  # 标签扩展以匹配分割后的数据
+
+    # 将列表转换为 numpy 数组
+    segmented_data = np.array(segmented_data)
+    expanded_labels = np.array(expanded_labels)
+
+    return segmented_data, expanded_labels
+
+
+def expand_subject_labels(subject_labels, data, window_size=900, step_size=250):
+    """
+    根据 EEG trial 分割数量扩展受试者标签。
+
+    参数:
+    subject_labels: 原始 trial 级别的 subject 标签，形状为 (n_trials,)
+    data: EEG 数据，形状为 (n_trials, n_bands, n_channels, n_samples)
+    window_size: 滑动窗口大小
+    step_size: 滑动窗口步长
+
+    返回:
+    expanded_subject_labels: 扩展后的 subject 标签，形状为 (n_windows,)
+    """
+    n_trials, _, _, n_samples = data.shape
+    expanded_subject_labels = []
+
+    for i in range(n_trials):
+        n_windows = (n_samples - window_size) // step_size + 1
+        expanded_subject_labels.extend([subject_labels[i]] * n_windows)
+
+    return np.array(expanded_subject_labels)
+
+
+def apply_mne_filter_split(data, sfreq, l_freq, h_freq, save_path=None, band_name=None):
+    """
+    使用 MNE 进行分步滤波（先低通后高通），得到指定频带的 EEG 信号。
+
+    参数:
+    data: ndarray, EEG 数据，形状 (batch_size, num_channels, time_steps)
+    sfreq: float, 采样率
+    l_freq: float, 低截止频率
+    h_freq: float, 高截止频率
+    save_path: str, 滤波结果保存路径
+    band_name: str, 滤波频带名称
+
+    返回:
+    filtered_data: ndarray, 滤波后的 EEG 数据
+    """
+
+    batch_size, num_channels, time_steps = data.shape
+    data_reshaped = data  # 不 reshape，直接按 (batch, channels, time)
+
+    # 滤波参数设置
+    fir_window = 'hamming'
+    phase_type = 'zero-double'
+
+    if band_name:
+        print(
+            f"Filtering band '{band_name}' with two-step filtering: "
+            f"1) lowpass at {h_freq} Hz, 2) highpass at {l_freq} Hz"
+        )
+
+    # 第一步：低通滤波 (≤ h_freq)
+    data_lowpassed = mne.filter.filter_data(
+        data_reshaped, sfreq=sfreq, l_freq=None, h_freq=h_freq,
+        method='fir', fir_design='firwin', phase=phase_type, pad='reflect_limited', fir_window=fir_window,
+    )
+
+    # 第二步：高通滤波 (≥ l_freq)
+    filtered_data = mne.filter.filter_data(
+        data_lowpassed, sfreq=sfreq, l_freq=l_freq, h_freq=None,
+        method='fir', fir_design='firwin', phase=phase_type, pad='reflect_limited', fir_window=fir_window,
+    )
+
+    # 保存结果
+    if save_path and band_name:
+        save_dir = os.path.join(save_path, f"filtered_{band_name}.npy")
+        os.makedirs(os.path.dirname(save_dir), exist_ok=True)
+        np.save(save_dir, filtered_data)
+        print(f"Filtered data for {band_name} saved to {save_dir}.")
+
+    return filtered_data
+
+
+class BandAttentionFusion(nn.Module):
+    def __init__(self, channels=64):
+        super().__init__()
+
+        # 公共特征整合门控
+        self.shared_gate1 = nn.Sequential(
+            nn.Conv1d(channels * 3, channels, kernel_size=1),
+            #nn.BatchNorm1d(channels),
+            nn.Sigmoid()
+        )
+
+        self.shared_gate2 = nn.Sequential(
+            nn.Conv1d(channels * 3, channels, kernel_size=1),
+            #nn.BatchNorm1d(channels),
+            nn.Tanh()
+        )
+
+        self.forgot = nn.Sequential(
+            nn.Conv1d(channels, channels, kernel_size=1),
+            #nn.BatchNorm1d(channels),
+            nn.Sigmoid()
+        )
+        self.out_proj = nn.Sequential(
+            nn.Conv1d(channels, channels, kernel_size=1),
+            nn.BatchNorm1d(channels),
+            nn.ELU(),
+            nn.Dropout(0.3)
+        )
+
+    def forward(self, mu, beta, gamma):
+
+        # 通用门控（压缩三频段共性）
+        concat = torch.cat([mu, beta, gamma], dim=1)           # [B, C*3, T]
+        Cell = mu+beta+gamma
+
+        gate1 = self.shared_gate1(concat)
+        gate2 = self.shared_gate2(concat)
+
+        cell = self.forgot(Cell)
+
+        # 加门控残差融合
+        x_fused = gate1*gate2+cell
+        #out = self.out_proj(x_fused)
+
+        return x_fused
+
+
+class MSCNNBlock(nn.Module):
+    def __init__(self, in_channels, out_channels=64):
+        super().__init__()
+        self.conv_d1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1, dilation=1)
+        self.conv_d2 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=2, dilation=2)
+        self.conv_d3 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=3, dilation=3)
+
+        self.fusion = nn.Sequential(
+            nn.Conv1d(out_channels * 3, out_channels, kernel_size=1),
+            nn.BatchNorm1d(out_channels),
+            nn.ELU()
+        )
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        x1 = self.conv_d1(x)
+        x2 = self.conv_d2(x)
+        x3 = self.conv_d3(x)
+        x_cat = torch.cat([x1, x2, x3], dim=1)  # 多尺度拼接
+        out = self.fusion(x_cat)               # [B, out_channels, T]
+        out = self.dropout(out)
+        return out
+
+
+def _make_divisible(v, divisor, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
+
+
+def hard_sigmoid(x, inplace: bool = False):
+    if inplace:
+        return x.add_(3.).clamp_(0., 6.).div_(6.)
+    else:
+        return F.relu6(x + 3.) / 6.
+
+
+class SqueezeExcite(nn.Module):
+    def __init__(self, in_chs, se_ratio=0.25, reduced_base_chs=None,
+                 act_layer=nn.ReLU, gate_fn=hard_sigmoid, divisor=4, **_):
+        super(SqueezeExcite, self).__init__()
+        self.gate_fn = gate_fn
+        reduced_chs = _make_divisible((reduced_base_chs or in_chs) * se_ratio, divisor)
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.conv_reduce = nn.Conv1d(in_chs, reduced_chs, 1, bias=True)
+        self.act1 = act_layer(inplace=True)
+        self.conv_expand = nn.Conv1d(reduced_chs, in_chs, 1, bias=True)
+
+    def forward(self, x):
+        x_se = self.avg_pool(x)
+        x_se = self.conv_reduce(x_se)
+        x_se = self.act1(x_se)
+        x_se = self.conv_expand(x_se)
+        x = x * self.gate_fn(x_se)
+        return x
+
+
+class DenseNet1D(nn.Module):
+    def __init__(self, in_channels=48, mid_channels=64, hidden_dims=[64, 64],
+                 dropout_rate=0.1, num_classes=11):
+        super().__init__()
+
+        self.residual = nn.Conv1d(in_channels, mid_channels, kernel_size=1)
+
+        self.conv_mu = MSCNNBlock(in_channels)
+        self.conv_beta = MSCNNBlock(in_channels)
+        self.conv_gamma = MSCNNBlock(in_channels)
+
+        self.mu_SE = SqueezeExcite(48)
+        self.beta_SE = SqueezeExcite(48)
+        self.gamma_SE = SqueezeExcite(48)
+
+        self.conv_delta = nn.Sequential(nn.Conv1d(11, 64, kernel_size=15, padding=7, dilation=1),
+                                        nn.BatchNorm1d(64),
+                                        nn.ELU(),
+                                        # nn.MaxPool1d(4, 4),
+                                        nn.Dropout(0.3))
+
+        self.band_fusion = BandAttentionFusion()
+        # 可学习权重系数
+        self.alpha = nn.Parameter(torch.tensor(0.5))
+        self.beta = nn.Parameter(torch.tensor(0.5))  # 可学习融合权重
+
+        self.max_pooling = nn.MaxPool1d(2, 2)
+        self.avg_pooling = nn.AvgPool1d(2, 2)
+
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
+        self.lstm1 = nn.LSTM(input_size=64, hidden_size=64, bidirectional=True)
+        self.lstm2 = nn.LSTM(input_size=128, hidden_size=64, bidirectional=True)
+        self.drop_out1 = nn.Dropout(0.3)
+        self.drop_out2 = nn.Dropout(0.3)
+        self.layer_norm1 = nn.LayerNorm(64)
+        self.layer_norm2 = nn.LayerNorm(128)
+        self.fc = nn.Linear(128, 64)
+
+        self.res_proj1 = nn.Linear(64, 128)  # 用于 LSTM1 残差
+        self.res_proj2 = nn.Identity()  # 如果两次输出维度一样可以不映射
+
+    def forward(self, delta, mu, beta, gamma):
+        # x: [B, 6, T]
+        delta = self.conv_delta(delta)
+        mu = self.conv_mu(self.mu_SE(mu))
+        beta = self.conv_beta(self.beta_SE(beta))
+        gamma = self.conv_gamma(self.gamma_SE(gamma))
+        x = self.band_fusion(mu, beta, gamma) + self.alpha*delta
+
+        #x = self.pooling(x)
+        #max_out = self.max_pooling(x)  # (B, C, T')
+        #avg_out = self.avg_pooling(x)
+        #x = torch.cat([max_out, avg_out], dim=1)  # (B, 2C, T')
+        x = self.max_pooling(x)
+        x = x.permute(0, 2, 1)
+
+        res1 = x
+        x = self.layer_norm1(x)
+        x, _ = self.lstm1(x)
+        x = self.drop_out1(x)
+        if res1.shape[-1] != x.shape[-1]:
+            res1 = self.res_proj1(res1)
+        x = x + res1  # 残差连接
+
+        res2 = x
+        x = self.layer_norm2(x)
+        x, _ = self.lstm2(x)
+        x = self.drop_out2(x)
+        if res2.shape[-1] != x.shape[-1]:
+            res2 = self.res_proj2(res2)
+        x = x + res2  # 第二次残差
+
+        # === Transformer 前可以再 LayerNorm（可选）===
+        # x = self.transformer(x)
+        x1 = torch.mean(x, dim=1)  # 全局平均池化： [B, hidden_dim]
+        x2 = x[:, -1]
+        x = x1
+        x = self.fc(x)
+        return x
+
+
+def select_band_channels(x, band, return_indices=False):
+    """
+    从 EEG 输入张量中选择指定频段对应的脑区通道。
+
+    参数：
+    x: torch.Tensor, 形状为 (B, bands, C, T)
+    band: str, 'mu', 'beta', 'gamma', 或 'delta'
+    return_indices: 是否返回通道索引（调试用）
+
+    返回：
+    x_band_selected: 选中通道的数据 (B, C_selected, T)
+    """
+    # 所有电极通道顺序（与原始数据顺序保持一致）
+    channel_columns = [
+        # Group 1 – Broca's & Wernicke's Area
+        'FT8', 'T7', 'P3', 'C3', 'C5', 'C4', 'FC6', 'F5', 'F3', 'FC3', 'FC5',
+        # Group 2 – Motor Cortex
+        'C3', 'C5', 'C1', 'CZ', 'C2', 'C4', 'FC1', 'FCZ', 'FC2', 'FC6', 'FC4',
+        # Group 3 – Frontal Lobe
+        'F1', 'FZ', 'F2', 'F4', 'F6', 'FCZ', 'FC2', 'FPZ', 'FP2', 'AF3', 'AF4',
+        # Group 4 – Parietal & Occipital Lobes
+        'P1', 'P2', 'P4', 'PZ', 'POZ', 'PO4', 'PO6', 'CP3', 'CP5', 'CP1', 'CPZ',
+        # Group 5 – Insular Approx. Area
+        'F8', 'T8', 'TP8', 'P8'
+    ]
+
+    # 通道名到索引
+    channel_to_index = {}
+    for i, ch in enumerate(channel_columns):
+        if ch not in channel_to_index:
+            channel_to_index[ch] = i
+
+    band_to_channels = {
+        'delta': ['P1', 'P2', 'PZ', 'POZ', 'CPZ', 'CP3', 'CP5', 'CP1', 'CZ', 'PO4', 'T7'],  # ➤ 语言注意+整合区 11channels
+        'mu': ['C3', 'C5', 'C1', 'CZ', 'C2', 'C4', 'FC1', 'FCZ', 'FC2', 'FC6', 'FZ', 'F4'], #12
+        'beta': ['F3', 'F5', 'FC3', 'FC5', 'C3', 'C5', 'P3', 'C4', 'T7',
+                 'FC6', 'F8', 'T8', 'FT8'],#13
+        'gamma': ['F1', 'F2', 'F6', 'FCZ', 'FC2', 'C3', 'C4', 'CZ', 'CP3',
+                  'P1', 'P2', 'P4', 'PZ', 'POZ', 'PO4', 'PO6', 'TP8', 'P8', 'FC3', 'FC4'],#20
+    }
+
+    band_map = {'delta': 0, 'mu': 1, 'beta': 2, 'gamma': 3}
+    assert band in band_map, f"无效频段：{band}"
+    band_idx = band_map[band]
+
+    indices = [channel_to_index[ch] for ch in band_to_channels[band] if ch in channel_to_index]
+    x_band = x[:, band_idx][:, indices, :]  # [B, C_selected, T]
+
+    return (x_band, indices) if return_indices else x_band
+
+
+class EEGRegionModel(nn.Module):
+    def __init__(self, hidden_size, num_layers, num_classes, embed_size, num_channels=64):
+        super(EEGRegionModel, self).__init__()
+
+        self.num_bands = 6
+
+        self.convLSTM1 = DenseNet1D()
+
+        self.pos_embedding = nn.Parameter(torch.randn(1, 3844, 128))
+
+        self.flatten = nn.Flatten()
+
+        self.alpha = nn.Parameter(torch.tensor(0.5))  # 可学习参数
+
+    def forward(self, x):
+        #mu_input = select_band_channels(x, 'mu')  # x: [B, 3, C, T]
+        #beta_input = select_band_channels(x, 'beta')
+        #gamma_input = select_band_channels(x, 'gamma')
+        delta_input = select_band_channels(x, 'delta')
+        #delta_input = x[:, 0]
+        mu_input = x[:, 1]
+        beta_input = x[:, 2]
+        gamma_input = x[:, 3]
+
+        output = self.convLSTM1(delta_input, mu_input, beta_input, gamma_input)
+
+        return output
+
+
+# 实例化新的 EEGRegionModel
+embed_dim = 128  # 5 个脑区的输出拼接
+num_heads = 4  # 多头注意力的头数
+hidden_size = 128  # LSTM的隐层大小
+num_layers = 1  # LSTM层数
+num_classes = 11  # 分类类别数
+
+# 创建模型实例
+model = EEGRegionModel(hidden_size=hidden_size, num_layers=num_layers, num_classes=num_classes,
+                       embed_size=embed_dim).cuda()
+
+
+# 打印模型结构
+# print(model)
+
+
+class EarlyStopping:
+    def __init__(self, patience=10, delta=1e-4):
+        """
+        :param patience: 验证准确率多少个 epoch 没提升就停止
+        :param delta: 认为“有提升”的最小增量
+        """
+        self.patience = patience
+        self.delta = delta
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+
+    def __call__(self, val_acc):
+        if self.best_score is None:
+            self.best_score = val_acc
+        elif val_acc < self.best_score + self.delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = val_acc
+            self.counter = 0
+
+
+def downsample_safely(data, original_fs, target_fs):
+    """
+    对 shape = (B, bands, C, T) 的多频段 EEG 数据进行抗混叠降采样。
+    返回 shape = (B, bands, C, T↓)
+    """
+    from mne.filter import resample
+
+    assert data.ndim == 4, "输入必须是 (B, bands, C, T)"
+    B, bands, C, T = data.shape
+    ratio = target_fs / original_fs
+
+    downsampled = []
+
+    for i in range(bands):
+        band_data = data[:, i]  # shape: (B, C, T)
+        band_down = resample(band_data, down=1 / ratio, npad='auto')  # shape: (B, C, T↓)
+        downsampled.append(band_down)
+
+    # 堆叠回 (B, bands, C, T↓)
+    return np.stack(downsampled, axis=1)
+
+
+def draw_tsne_embeddings(model, X, y, subject_labels, save_path=None, title="t-SNE of EEG Embeddings"):
+    """
+    将模型输出的 EEG embedding 映射到2D空间并按受试者可视化
+    参数：
+        model: 训练好的模型（需包含提取 embedding 的前向部分）
+        X: [N, C, T] EEG数据 tensor
+        y: [N] 类别标签 tensor
+        subject_labels: [N] 每个样本对应的 subject_id（整数或字符串）
+        save_path: 如果提供，会保存图片；否则直接 plt.show()
+    """
+    model.eval()
+    with torch.no_grad():
+        embeddings = model(X).cpu().numpy()
+
+    subject_labels = subject_labels.cpu().numpy()
+    tsne = TSNE(n_components=2, perplexity=30, init='pca', random_state=0)
+    X_tsne = tsne.fit_transform(embeddings)
+
+    plt.figure(figsize=(10, 8))
+    palette = sns.color_palette("hsv", len(set(subject_labels)))
+    sns.scatterplot(x=X_tsne[:, 0], y=X_tsne[:, 1], hue=subject_labels, palette=palette, s=40, alpha=0.8)
+
+    plt.title(title)
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+    plt.legend(title="Subject ID", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"t-SNE 图已保存到: {save_path}")
+    else:
+        plt.show()
+
+
+def compute_phase_envelope(epoch_band, batch_size=64, fs=500, cutoff=5):
+    """
+    计算每个频段的相位和包络，并对包络进行低通滤波和标准化。
+
+    参数:
+        epoch_band: np.array shape (B, bands, C, T)
+        batch_size: 批处理大小
+        fs: 采样率 (默认 500Hz)
+        cutoff: 包络低通滤波截止频率 (默认 5Hz)
+
+    返回:
+        phase: 相位 (B, bands, C, T)
+        envelope_z: 标准化后的包络 (B, bands, C, T)
+    """
+    B, bands, C, T = epoch_band.shape
+
+    # 初始化相位和包络矩阵
+    phase = np.zeros((B, bands, C, T))
+    envelope = np.zeros((B, bands, C, T))
+
+    # 对每个频带处理
+    for band_idx in range(bands):
+        for i in range(0, B, batch_size):  # 分批次处理
+            batch_data = epoch_band[i:i + batch_size, band_idx, :, :]  # 当前批次的数据 (batch, C, T)
+
+            # Hilbert变换提取相位和包络
+            analytic_signal = hilbert(batch_data, axis=-1)  # (batch, C, T)
+            phase[i:i + batch_size, band_idx] = np.angle(analytic_signal)  # 相位
+            envelope_batch = np.abs(analytic_signal)  # 原始包络
+
+            # 存储滤波后的包络
+            envelope[i:i + batch_size, band_idx] = envelope_batch
+
+    envelope_z = envelope  # 标准化后的包络
+
+    return envelope_z
+
+
+# === 1. 创建 Prototypical Network 的 Episode ===
+def create_episode(X, y, n_way=11, k_shot=5, q_query=10):
+    device = X.device
+    classes = torch.unique(y).cpu()
+    assert len(classes) >= n_way, f"数据中类别数不足 {n_way}"
+
+    selected_classes = classes[torch.randperm(len(classes))[:n_way]]
+    support_x, support_y, query_x, query_y = [], [], [], []
+
+    for i, cls in enumerate(selected_classes):
+        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
+        if len(cls_idx) < k_shot + q_query:
+            raise ValueError(f"类别 {cls.item()} 的样本数不足（需要 {k_shot + q_query}）")
+        selected = cls_idx[torch.randperm(len(cls_idx))[:k_shot + q_query]]
+        support_x.append(X[selected[:k_shot]])
+        query_x.append(X[selected[k_shot:]])
+        support_y.append(torch.full((k_shot,), i, device=device))
+        query_y.append(torch.full((q_query,), i, device=device))
+
+    x = torch.cat(support_x + query_x, dim=0)
+    y_ep = torch.cat(support_y + query_y, dim=0)
+
+    return x, y_ep
+
+
+def create_episode_diverse_support_fixed_query_subject(X, y, subject_labels, n_way=11, k_shot=5, q_query=10):
+    """
+    - Support: 来自不同的受试者，每个样本一个受试
+    - Query: 从一个未被 support 使用的受试者中选取
+    """
+    import torch
+    import random
+
+    assert X.shape[0] == y.shape[0] == subject_labels.shape[0], "🚨 输入数量不匹配！"
+    assert subject_labels.device == y.device and y.device == X.device, "🚨 所有输入应在同一 device！"
+
+    device = X.device
+    classes = torch.unique(y)
+    assert len(classes) >= n_way, f"类别数不足 {n_way}"
+
+    selected_classes = classes[torch.randperm(len(classes))[:n_way]]
+    support_x, support_y, query_x, query_y = [], [], [], []
+
+    for i, cls in enumerate(selected_classes):
+        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
+        cls_subjs = subject_labels[cls_idx]
+        unique_subs = torch.unique(cls_subjs)
+
+        if len(cls_idx) < k_shot + q_query or len(unique_subs) < 2:
+            continue
+
+        # ✅ 尽可能从不同受试者中选择 support（每人一个样本）
+        support_idx = []
+        support_subs_selected = []
+        candidate_subs = unique_subs.tolist()
+        random.shuffle(candidate_subs)
+
+        for subj in candidate_subs:
+            subj_idx = cls_idx[(cls_subjs == subj).nonzero(as_tuple=True)[0]]
+            if len(subj_idx) == 0:
+                continue
+            pick = subj_idx[torch.randint(0, len(subj_idx), (1,)).item()]
+            support_idx.append(pick.item())
+            support_subs_selected.append(subj)
+            if len(support_idx) >= k_shot:
+                break
+
+        if len(support_idx) < k_shot:
+            continue
+
+        # ✅ Query 从未用过的受试中选一个人
+        remaining_subs = [s for s in unique_subs.tolist() if s not in support_subs_selected]
+        if len(remaining_subs) == 0:
+            continue
+
+        query_subj = random.choice(remaining_subs)
+        query_pool = cls_idx[(cls_subjs == query_subj).nonzero(as_tuple=True)[0]]
+        if len(query_pool) < q_query:
+            continue
+
+        q_sel = query_pool[torch.randperm(len(query_pool))[:q_query]]
+        s_sel = torch.tensor(support_idx, device=device)
+
+        support_x.append(X[s_sel])
+        query_x.append(X[q_sel])
+        support_y.append(torch.full((k_shot,), i, dtype=torch.long, device=device))
+        query_y.append(torch.full((q_query,), i, dtype=torch.long, device=device))
+
+    if not support_x or not query_x:
+        raise ValueError("❌ 无法构造有效 episode，请检查数据是否足够")
+
+    x_ep = torch.cat(support_x + query_x, dim=0)
+    y_ep = torch.cat(support_y + query_y, dim=0)
+    return x_ep, y_ep
+
+
+def create_episode_diverse_support_balanced_query(X, y, subject_labels, n_way=11, k_shot=5, q_query=10):
+    """
+    每个 episode 构造：
+    - support: 每类从不同的 subject 取 k_shot 个样本
+    - query: 从剩下的 subject 中，尽量平均地分配 q_query 个样本
+    """
+
+    import torch
+    import random
+
+    assert X.shape[0] == y.shape[0] == subject_labels.shape[0], "❌ 输入维度不一致"
+    device = X.device
+    support_x, support_y, query_x, query_y = [], [], [], []
+
+    classes = torch.unique(y)
+    assert len(classes) >= n_way, "❌ 类别数不足 n_way"
+
+    selected_classes = classes[torch.randperm(len(classes))[:n_way]]
+
+    for i, cls in enumerate(selected_classes):
+        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
+        cls_subj = subject_labels[cls_idx]
+        unique_subj = torch.unique(cls_subj)
+
+        # 检查是否有足够的受试支持 support + query
+        if len(unique_subj) < 2:
+            continue
+
+        # === Step 1: 构建 support（来自不同受试）
+        support_idx = []
+        support_subjs_used = []
+        candidate_subs = unique_subj.tolist()
+        random.shuffle(candidate_subs)
+
+        for subj in candidate_subs:
+            subj_idx = cls_idx[(cls_subj == subj).nonzero(as_tuple=True)[0]]
+            if len(subj_idx) == 0:
+                continue
+            pick = subj_idx[torch.randint(0, len(subj_idx), (1,)).item()]
+            support_idx.append(pick.item())
+            support_subjs_used.append(subj)
+            if len(support_idx) >= k_shot:
+                break
+
+        if len(support_idx) < k_shot:
+            continue
+
+        # === Step 2: 构建 query（从剩下的受试中平均抽取）
+        remaining_subs = [s for s in unique_subj.tolist() if s not in support_subjs_used]
+        if len(remaining_subs) == 0:
+            continue
+
+        query_idx = []
+        # 尽可能平均地从每个剩余受试中抽样
+        while len(query_idx) < q_query and remaining_subs:
+            for subj in remaining_subs:
+                if len(query_idx) >= q_query:
+                    break
+                subj_pool = cls_idx[(cls_subj == subj).nonzero(as_tuple=True)[0]]
+                if len(subj_pool) == 0:
+                    continue
+                pick = subj_pool[torch.randint(0, len(subj_pool), (1,)).item()]
+                query_idx.append(pick.item())
+
+        if len(query_idx) < q_query:
+            continue
+
+        # === 构建 support/query 样本
+        s_sel = torch.tensor(support_idx, device=device)
+        q_sel = torch.tensor(query_idx, device=device)
+
+        support_x.append(X[s_sel])
+        support_y.append(torch.full((k_shot,), i, dtype=torch.long, device=device))
+
+        query_x.append(X[q_sel])
+        query_y.append(torch.full((q_query,), i, dtype=torch.long, device=device))
+
+    if not support_x or not query_x:
+        raise ValueError("❌ 无法构造有效 episode，请检查数据或参数")
+
+    x_ep = torch.cat(support_x + query_x, dim=0)
+    y_ep = torch.cat(support_y + query_y, dim=0)
+    return x_ep, y_ep
+
+
+# === 2. 原型网络损失函数 ===
+def prototypical_loss(embeddings, targets, n_support):
+    target_set = torch.unique(targets)
+    n_classes = len(target_set)
+
+    support_idx, query_idx = [], []
+    for cls in target_set:
+        cls_idx = (targets == cls).nonzero(as_tuple=True)[0]
+        support_idx.append(cls_idx[:n_support])
+        query_idx.append(cls_idx[n_support:])
+
+    support_idx = torch.cat(support_idx)
+    query_idx = torch.cat(query_idx)
+
+    support_embeddings = embeddings[support_idx]
+    query_embeddings = embeddings[query_idx]
+    support_targets = targets[support_idx]
+    query_targets = targets[query_idx]
+
+    prototypes = []
+    for cls in range(n_classes):
+        cls_support = support_embeddings[support_targets == cls]
+        prototypes.append(cls_support.mean(dim=0))
+    prototypes = torch.stack(prototypes)
+
+    dists = torch.cdist(query_embeddings, prototypes)
+    log_p_y = F.log_softmax(-dists, dim=1)
+
+    loss = F.nll_loss(log_p_y, query_targets)
+    preds = torch.argmax(log_p_y, dim=1)
+    acc = (preds == query_targets).float().mean()
+
+    return loss, acc, preds, query_targets
+
+
+def dual_metric_prototypical_loss(embeddings, targets, n_support, alpha=0.5):
+    """
+    :param embeddings: [N, D] 输入特征
+    :param targets: [N] 对应标签，已经是局部 0～n_classes-1 的索引！
+    :param n_support: 每类 support 样本数
+    :param alpha: 混合系数，0.0 = 纯欧几里得，1.0 = 纯余弦距离
+    :return: loss, acc, preds, query_targets
+    """
+
+    # 获取当前 episode 中的类别
+    target_set = torch.unique(targets)
+    n_classes = len(target_set)
+
+    support_idx, query_idx = [], []
+    for cls in target_set:
+        cls_idx = (targets == cls).nonzero(as_tuple=True)[0]
+        support_idx.append(cls_idx[:n_support])
+        query_idx.append(cls_idx[n_support:])
+
+    support_idx = torch.cat(support_idx)
+    query_idx = torch.cat(query_idx)
+
+    support_embeddings = embeddings[support_idx]
+    query_embeddings = embeddings[query_idx]
+    support_targets = targets[support_idx]
+    query_targets = targets[query_idx]
+
+    # === 1. 原型构造 ===
+    prototypes = []
+    for cls in range(n_classes):
+        cls_support = support_embeddings[support_targets == cls]
+        prototypes.append(cls_support.mean(dim=0))
+    prototypes = torch.stack(prototypes)  # [n_classes, D]
+
+    # === 2. 欧几里得距离 ===
+    euclidean_dists = torch.cdist(query_embeddings, prototypes, p=2)  # [N_query, N_classes]
+
+    # === 3. 余弦相似度 ===
+    # 先归一化（单位向量）
+    query_norm = F.normalize(query_embeddings, dim=1)
+    proto_norm = F.normalize(prototypes, dim=1)
+    cosine_sim = torch.matmul(query_norm, proto_norm.T)  # [N_query, N_classes]
+    cosine_dists = 1.0 - cosine_sim  # 距离 = 1 - 相似度
+
+    # === 4. 加权融合 ===
+    combined_dist = alpha * cosine_dists + (1 - alpha) * euclidean_dists
+
+    # === 5. 计算损失 ===
+    log_p_y = F.log_softmax(-combined_dist, dim=1)
+    loss = F.nll_loss(log_p_y, query_targets)
+    preds = torch.argmax(log_p_y, dim=1)
+    acc = (preds == query_targets).float().mean()
+
+    return loss, acc, preds, query_targets
+
+
+# === 3. 验证 / 测试函数 ===
+def evaluate_protonet(model, data_x, data_y, save_dir=None, n_way=11, k_shot=5, q_query=10, n_episodes=1):
+    device = data_x.device
+    model.eval()
+    all_preds, all_targets = [], []
+
+    with torch.no_grad():
+        for _ in range(n_episodes):
+            x_ep, y_ep = create_episode(data_x, data_y, n_way, k_shot, q_query)
+            emb = model(x_ep)
+            _, _, preds, true = prototypical_loss(emb, y_ep, n_support=k_shot)
+            all_preds.append(preds)
+            all_targets.append(true)
+
+    all_preds = torch.cat(all_preds).cpu().numpy()
+    all_targets = torch.cat(all_targets).cpu().numpy()
+
+    acc = np.mean(all_preds == all_targets)
+    cm = confusion_matrix(all_targets, all_preds)
+    kappa = cohen_kappa_score(all_targets, all_preds)
+    recall = recall_score(all_targets, all_preds, average='macro')
+    precision = precision_score(all_targets, all_preds, average='macro')
+    f1 = f1_score(all_targets, all_preds, average='macro')
+    balanced_acc = balanced_accuracy_score(all_targets, all_preds)
+
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='.0f', cmap='RdPu', linewidths=0.3, linecolor='gray', square=True,
+                    cbar_kws={'label': 'Count'})
+        plt.title('Confusion Matrix', fontsize=16)
+        plt.xlabel('Predicted Label', fontsize=12)
+        plt.ylabel('True Label', fontsize=12)
+        plt.xticks(fontsize=10)
+        plt.yticks(fontsize=10)
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, 'conf_matrix.png'))
+        plt.close()
+
+    return {
+        'accuracy': acc,
+        'balanced_accuracy': balanced_acc,
+        'kappa': kappa,
+        'recall': recall,
+        'precision': precision,
+        'f1': f1,
+        'confusion_matrix': cm
+    }
+
+
+def save_accuracy_plot(val_accs, val_checkpoints, save_dir, fold):
+    import matplotlib.pyplot as plt
+    import os
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(val_checkpoints, val_accs, label='Validation Accuracy', color='orange', marker='o')
+    plt.xlabel("Episode")
+    plt.ylabel("Validation Accuracy")
+    plt.title(f"Validation Accuracy Curve - Fold {fold}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f"val_accuracy_curve_fold{fold}.png")
+    plt.savefig(save_path)
+    plt.close()
+
+
+# 实验类，处理数据加载、训练和评估
+class ExP():
+    def __init__(self, train_data, train_y, test_data, test_y, test_id, path_to_data, train_subject_labels):
+        super(ExP, self).__init__()
+        self.batch_size = 64
+        self.n_epochs = 40
+        self.c_dim = 4
+        self.lr = 0.0006
+        self.b1 = 0.5
+        self.b2 = 0.999
+        self.train_data = train_data
+        self.train_y = train_y
+        self.test_data = test_data
+        self.test_y = test_y
+        self.test_id = test_id
+        self.path_to_data = path_to_data  # 每个受试者的数据路径
+        self.train_subject_labels = train_subject_labels
+        self.dimension = (190, 50)
+        self.start_epoch = 0
+
+        self.Tensor = torch.cuda.FloatTensor
+        self.LongTensor = torch.cuda.LongTensor
+
+        # 定义模型超参数
+        embed_dim = 128  # 5 个脑区的输出拼接
+        num_heads = 4  # 多头注意力的头数
+        hidden_size = 128  # LSTM的隐层大小
+        num_layers = 1  # LSTM层数
+        num_classes = 11  # 分类类别数
+
+        # 定义模型并传入 embed_dim 和 num_heads
+        self.model = EEGRegionModel(hidden_size=hidden_size, num_layers=num_layers, num_classes=num_classes,
+                                    embed_size=embed_dim).cuda()
+        self.model = nn.DataParallel(self.model, device_ids=[i for i in range(len(gpus))])
+        self.model = self.model.cuda()
+
+    def get_source_data(self):
+        # 读取原始、滤波和ICA处理后的数据
+        # df_raw = load_data(self.path_to_data + self.subject + '/GAM', 'df_epochs_ica_ne.pkl')
+
+        train_x, train_y = self.train_data, self.train_y
+        test_x, test_y = self.test_data, self.test_y
+        test_id = self.test_id
+        train_subject_labels = self.train_subject_labels
+
+        print("X_train.shape", train_x.shape)
+        print("train_y.shape", train_y.shape)
+        print("test_x.shape", test_x.shape)
+        print("test_y.shape", test_y.shape)
+        print("test_id", test_id)
+
+        # 定义频带
+        frequency_bands = {
+            "delta": (0.5, 4),
+            # "theta": (4, 8),
+            "mu": (8, 12),
+            # "alpha": (8, 13),
+            "beta": (13, 30),
+            "gamma": (30, 70),
+            # "high gamma": (60, 104),
+        }
+
+        save_path = os.path.join(self.path_to_data, 'GAM')
+
+        # 获取原始采样率（假设原始数据采样率为1000Hz）
+        original_fs = 1000
+
+        baseline_len = 2000
+        train_processed = train_x[:, :, baseline_len:]
+        test_processed = test_x[:, :, baseline_len:]
+
+        train_bands = []  # 初始化频带数据列表
+        test_bands = []
+
+        for band_name, (lowcut, highcut) in frequency_bands.items():
+            # 滤波训练数据
+            filtered_data_train = apply_mne_filter_split(
+                data=train_processed, sfreq=original_fs, l_freq=lowcut, h_freq=highcut, band_name=band_name
+            )
+            filtered_data_test = apply_mne_filter_split(
+                data=test_processed, sfreq=original_fs, l_freq=lowcut, h_freq=highcut, band_name=band_name
+            )
+
+            # 为每个频带的数据添加新维度（此处假设是为了频带的拼接）
+            train_bands.append(np.expand_dims(filtered_data_train, axis=1))  # 添加到 bands 列表
+            test_bands.append(np.expand_dims(filtered_data_test, axis=1))  # 添加到 bands 列表
+
+        # 将所有频带数据拼接在一起（在第二维进行拼接，即频带维度）
+        train_filtered = np.concatenate(train_bands, axis=1)
+        train_x = train_filtered
+
+        test_filtered = np.concatenate(test_bands, axis=1)
+        test_x = test_filtered
+
+        # 合并训练集数据：低频相位和高频包络
+        train_data = train_x
+        test_data = test_x
+
+        print(f"Train data shape after stacking: {train_data.shape}")
+        print(f"Test data shape after stacking: {test_data.shape}")
+
+        train_envelope = compute_phase_envelope(train_x)
+        test_envelope = compute_phase_envelope(test_x)
+
+        train_x = downsample_safely(train_envelope, 1000, 256)
+        test_x = downsample_safely(test_envelope, 1000, 256)
+
+        # 分割训练和验证数据
+        segmented_train_x, expanded_train_y = segment_data_and_labels(train_x, train_y, window_size=600,
+                                                                      step_size=400)
+        segmented_test_x, expanded_test_y = segment_data_and_labels(test_x, test_y, window_size=600,
+                                                                    step_size=400)
+        # 同步扩展 subject labels
+        expanded_train_subject_labels = expand_subject_labels(train_subject_labels, train_x, window_size=600,
+                                                              step_size=400)
+
+        # 将扩展后的标签赋值回 train_y 和 val_y
+        train_x = segmented_train_x
+        test_x = segmented_test_x
+        train_y = expanded_train_y
+        test_y = expanded_test_y
+
+        train_subject_labels = expanded_train_subject_labels
+        print(f"Train X: {train_x.shape}, Train y: {train_y.shape}, Subject Labels: {train_subject_labels.shape}")
+
+        # 数据增强
+        #train_x, train_y = mix_and_expand_data(train_x, train_y, augment_data_eeg_bandwise, augment_ratio=0.6)
+        #train_x, train_y, train_subject_labels = mix_and_expand_data_with_subjects(
+         #   train_x, train_y, train_subject_labels,
+           # augment_data_eeg_bandwise, augment_ratio=0.6
+        #)
+
+        return train_x, train_y, test_x, test_y, test_id, train_subject_labels
+
+    def train(self, only_test=False):
+
+        train_x, train_y, test_x, test_y, test_id, train_subject_labels = self.get_source_data()
+        subject_id = test_id
+        #print("train_x.shape:", train_x.shape)
+        #print("train_y.shape:", train_y.shape)
+        #print("self.train_subject_labels.shape:", self.train_subject_labels.shape)
+
+        #save_path_to_data = "/work/eee-zhangyf/xduer-SI-15600-5/"
+        save_path_to_data = "E:/迅雷下载/xduer-SI-15600-5/"
+        save_dir = os.path.join(save_path_to_data, 'GAM')
+        os.makedirs(save_dir, exist_ok=True)
+
+        all_conf_matrices = []
+        results = []
+
+        print(f"test for subject {subject_id}")
+        train_x = torch.tensor(train_x, dtype=torch.float32).cuda()
+        train_y = torch.tensor(train_y, dtype=torch.long).cuda()
+        test_x = torch.tensor(test_x, dtype=torch.float32).cuda()
+        test_y = torch.tensor(test_y, dtype=torch.long).cuda()
+        train_subject_labels = torch.tensor(train_subject_labels, dtype=torch.long).cuda()
+
+        self.model = EEGRegionModel(hidden_size=128, num_layers=1, num_classes=11, embed_size=128).cuda()
+        self.model = nn.DataParallel(self.model)
+        self.model = self.model.cuda()
+        model_path = os.path.join(save_dir, f"subject_{subject_id}_best.pth")
+
+        if not only_test:
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-5)
+
+            best_val_acc = 0
+            best_state = None
+            train_accs = []
+            val_accs = []
+            val_checkpoints = []
+            early_stopping = EarlyStopping(patience=60)  # 🔥比如 20 次验证都没提升就停止
+
+            for episode in range(1, 14901):
+                self.model.train()  # ✅ 必须加！
+                #x_ep, y_ep = create_diverse_episode(train_x, train_y, train_subject_labels, n_way=11, k_shot=3, q_query=6)
+                x_ep, y_ep = create_episode_diverse_support_balanced_query(
+                    train_x, train_y, train_subject_labels,
+                    n_way=11, k_shot=3, q_query=4,
+                )
+
+                emb = self.model(x_ep)
+                loss, acc, _, _ = dual_metric_prototypical_loss(emb, y_ep, n_support=3, alpha=0.5)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                if episode % 100 == 0:
+                    print(f"[training for subject {subject_id}] Episode {episode}: loss={loss:.4f}, acc={acc:.4f}")
+                    train_accs.append(acc.item())  # ✅ 添加这一行\
+            torch.save(self.model.state_dict(), model_path)
+
+            # === 测试阶段 ===
+        print(f"▶ Loading best model for subject {subject_id} for testing...")
+        # self.model.load_state_dict(best_state)
+        self.model.load_state_dict(torch.load(model_path))
+        test_metrics = evaluate_protonet(self.model,
+                                         test_x,
+                                         test_y,
+                                         save_dir=os.path.join(save_dir, f"subject_{subject_id}"),
+                                         n_way=11, k_shot=3, q_query=4, n_episodes=1000)
+
+        with open(os.path.join(save_dir, f"subject_{subject_id}_results.txt"), "w") as f:
+            for k, v in test_metrics.items():
+                if k != 'confusion_matrix':
+                    f.write(f"{k}: {v:.4f}\\n")
+
+        return test_metrics, save_dir
+
+
+# 主函数
+def main():
+
+    SUBJECTS = ['MM10', 'MM11', 'MM19', 'P02', 'MM05', 'MM16', 'MM21', 'MM18']
+    PATH_TO_DATA = "D:\\Downloads\\KARA_ONE_Data\\ImaginedSpeechData\\"
+    #PATH_TO_DATA = "/work/eee-zhangyf/xduann/KARA_ONE_Data/ImaginedSpeechData/"
+
+    all_results = []
+    all_conf_matrices = []
+
+    for test_subject in SUBJECTS:
+        print(f"\n🚀 Leave-One-Subject-Out: {test_subject} as test set")
+
+        X_train_all, y_train_all, train_subject_labels_all = [], [], []
+        X_test, y_test = None, None
+
+        for subject in SUBJECTS:
+            print(f"  Processing Subject: {subject}")
+            df_raw = load_data(PATH_TO_DATA + subject + '/GAM', 'df_epochs_ica_no.pkl')
+            X_raw, y_raw = extract_features_and_labels(df_raw)
+
+            if subject == test_subject:
+                X_test, y_test = X_raw, y_raw
+            else:
+                X_train_all.append(X_raw)
+                y_train_all.append(y_raw)
+                subj_index = SUBJECTS.index(subject)
+                train_subject_labels_all.append(np.full(len(y_raw), subj_index))
+
+        # 拼接训练集
+        X_train_all = np.concatenate(X_train_all, axis=0)
+        y_train_all = np.concatenate(y_train_all, axis=0)
+        train_subject_labels_all = np.concatenate(train_subject_labels_all, axis=0)
+
+        #train_subject_labels_all = torch.tensor(train_subject_labels_all, dtype=torch.long).cuda()
+        print(f"Train: {X_train_all.shape}, Test: {X_test.shape}")
+        print("y_train_all shape:", y_train_all.shape)
+        print("train_subject_labels_all shape:", train_subject_labels_all.shape)
+
+        # === 创建 ExP 实例 ===
+        exp = ExP(X_train_all, y_train_all, X_test, y_test, test_id=test_subject, path_to_data=PATH_TO_DATA,
+                  train_subject_labels=train_subject_labels_all)
+
+        test_metrics, save_dir = exp.train()
+
+        all_results.append(test_metrics)
+        all_conf_matrices.append(test_metrics['confusion_matrix'])
+
+    # 汇总结果
+    avg_metrics = {}
+
+    keys = ['accuracy', 'balanced_accuracy', 'kappa', 'recall', 'precision', 'f1']
+    for key in keys:
+        avg_metrics[key] = np.mean([res[key] for res in all_results])
+
+    with open(os.path.join(save_dir, "average_results.txt"), "w") as f:
+        for k, v in avg_metrics.items():
+            f.write(f"Average {k}: {v:.4f}\n")
+
+    avg_cm = np.mean(all_conf_matrices, axis=0)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(avg_cm, annot=True, fmt='.1f', cmap='RdPu', linewidths=0.3, linecolor='gray', square=True,
+                cbar_kws={'label': 'Avg Count'})
+    plt.title('Average Confusion Matrix Across Subjects', fontsize=16)
+    plt.xlabel('Predicted Label', fontsize=12)
+    plt.ylabel('True Label', fontsize=12)
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "average_confusion_matrix.png"))
+    plt.close()
+
+    print("✅ LOSO experiment complete. Results saved.")
+
+
+if __name__ == "__main__":
+    main()
