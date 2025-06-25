@@ -11,6 +11,35 @@ Third，run network training and test.py， this is the all work I did in this P
 this file contains the labels encoding for model input,hibert transform and FIR filtering, and channel selection ,and network structure, 
 and Prototype network construction and training
 
+Kara One dataset,you can download in here:https://www.cs.toronto.edu/~complingweb/data/karaOne/karaOne.html
 
+valuation Protocol: Leave-One-Subject-Out (LOSO)
+
+This project strictly follows a Leave-One-Subject-Out (LOSO) cross-validation protocol to ensure subject-independent evaluation and eliminate any risk of data leakage. For each evaluation fold:
+
+    One subject is held out as the test set.
+
+    The remaining subjects are used exclusively as the training set.
+
+    No overlap exists between training and testing data in any fold.
+
+    The model is retrained from scratch for each fold to avoid subject-specific bias.
+
+✅ No Data Leakage Guarantee
+
+To prevent any potential data leakage, the data loading and processing pipeline is carefully designed:
+
+    Subject-level Separation:
+    In each LOSO fold, the EEG recordings of the test subject are completely excluded from training. They are only used during evaluation.
+
+    Independent Preprocessing:
+    EEG filtering (bandpass), envelope extraction, downsampling, and segmentation are performed after the LOSO split. This guarantees that no statistical information from the test subject contaminates the training pipeline.
+
+    Subject Labels for Episode Sampling:
+    The episode construction function create_episode_diverse_support_balanced_query() ensures that the support and query samples come from different subjects, further reinforcing subject-level independence during few-shot training.
+
+    Reproducible Protocol:
+    All data processing is done dynamically within each training fold. No precomputed shared artifacts (e.g., global PCA, scaling) are reused across folds.
+    
 finally, if you have any question,please concat me  Wechat：CMU_ann (15291835753), email:xduann@163.com 
 and my telephone number:+86 15291835753
