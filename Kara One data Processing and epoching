@@ -1,0 +1,226 @@
+import numpy as np
+import MDS_SCRIPTS as mds
+import mne
+from mne.preprocessing import ICA
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import copy
+import scipy
+
+
+def run_mne_ica_pipeline(raw, save_path, l_freq=0.5, h_freq=104.0, notch_freq=60.0, method='fastica'):
+    """
+    完整 ICA 清理流程：包括滤波、CAR、自动识别 EOG 和 EMG 伪迹、并可视化保存。
+    """
+    print("✅ 开始 MNE ICA 自动清理流程")
+
+    # 设置文件保存路径
+    os.makedirs(save_path, exist_ok=True)
+
+    # ===== Step 1: 滤波与陷波 =====
+    raw = raw.copy()
+
+    # ===== Step 2: 设置 CAR 参考（全脑平均）=====
+    raw.set_eeg_reference('average', projection=False)
+    print("✅ 已应用全脑平均参考（CAR）")
+
+    raw.notch_filter(freqs=notch_freq, notch_widths=1, fir_design='firwin')
+    #raw = raw.notch_filter(freqs=np.array((60, 120, 180, 240)), notch_widths=1, fir_design='firwin')
+    raw.filter(0.5, None, fir_design='firwin')
+    raw.filter(None, 164., fir_design='firwin')
+
+
+    # ===== Step 3: ICA 初始化并拟合 =====
+    ica = ICA(n_components=0.998, method=method, random_state=97, max_iter='auto')
+    ica.fit(raw)
+    print("✅ ICA 拟合完成")
+
+    # ===== Step 4: 自动检测 EOG 伪迹 =====
+    eog_inds, eog_scores = ica.find_bads_eog(raw, ch_name='FP1')
+    print(f"✅ 自动检测到 EOG 伪迹 ICA 成分: {eog_inds}")
+
+    # ===== Step 5: 自动检测 EMG 伪迹（高频方差） =====
+    emg_inds = []
+    for i in range(ica.n_components_):
+        source = ica.get_sources(raw).get_data(picks=[i])[0]
+        # 高频能量比值（35Hz以上）
+        fft = np.fft.rfft(source)
+        freqs = np.fft.rfftfreq(len(source), d=1.0 / raw.info['sfreq'])
+        high_freq_power = np.mean(np.abs(fft[(freqs > 35) & (freqs < 100)])**2)
+        low_freq_power = np.mean(np.abs(fft[(freqs >= 1) & (freqs <= 15)])**2)
+        if high_freq_power / low_freq_power > 5:  # 阈值可调
+            emg_inds.append(i)
+    #print(f"✅ 自动检测到 EMG 伪迹 ICA 成分: {emg_inds}")
+    # 使用 find_bads_emg 来自动检测 EMG 伪迹
+    #emg_inds, emg_scores = ica.find_bads_emg(raw)
+
+    # 输出检测到的 EMG 成分索引
+    #print(f"EMG 伪迹成分的索引：{emg_inds}")
+
+    # 输出每个成分的 EMG 能量得分（高频能量比值）
+    #print(f"EMG 伪迹成分的能量得分：{emg_scores}")
+
+    # ===== Step 6: 伪迹成分排除并应用 =====
+    ica.exclude = list(set(eog_inds + emg_inds))
+    print(f"🚫 总共排除 ICA 成分: {ica.exclude}")
+    raw_clean = raw.copy()
+    ica.apply(raw_clean)
+
+    # ===== Step 7: 可视化保存 =====
+    # 安全地保存 ICA 成分图
+    figs = ica.plot_components(show=False)
+    if isinstance(figs, list):
+        for i, fig in enumerate(figs):
+            fig.savefig(os.path.join(save_path, f"ICA_components_{i}.png"))
+            plt.close(fig)
+    else:
+        figs.savefig(os.path.join(save_path, "ICA_components.png"))
+        plt.close(figs)
+
+    fig = ica.plot_overlay(raw, exclude=ica.exclude, show=False)
+    fig.savefig(os.path.join(save_path, "ICA_overlay_before_after.png"))
+    plt.close(fig)
+
+    fig = ica.plot_sources(raw, show=False)
+    fig.savefig(os.path.join(save_path, "ICA_sources_raw.png"))
+    plt.close(fig)
+
+    fig = ica.plot_scores(eog_scores, exclude=eog_inds, show=False)
+    fig.savefig(os.path.join(save_path, "ICA_EOG_scores.png"))
+    plt.close(fig)
+
+    print("🎉 ICA 清理流程完成！")
+    return raw_clean
+
+
+def main():
+    PATH_TO_DATA = "D:/Downloads/KARA_ONE_Data/"  # 需要设置的路径
+    SUBJECTS = ['MM18', 'MM05', 'MM11', 'MM21', 'P02', 'MM10', 'MM16', 'MM19']
+
+    # Suppress plotting of images
+    plt.ioff()
+
+    # Initialise subjects' instances.
+    for subject in SUBJECTS:
+        mds.Dataset(subject)
+
+    # Set larger figure size than default
+    #plt.figure(figsize=(30, 20))
+
+    for subject in mds.Dataset.registry:
+        print("Working on Subject: " + subject.name)
+        print('Loading data..')
+        subject.load_data(PATH_TO_DATA, raw=False, eeglab=True)
+
+        print('Data Loaded.')
+        print(subject.eeg_data.info)
+
+        subject.eeg_data.load_data()
+
+        # Make directories to store model results if not exist
+        save_path = PATH_TO_DATA + "\\ImaginedSpeechData"
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+
+        save_path = PATH_TO_DATA + "\\ImaginedSpeechData\\" + subject.name
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+
+        save_path = PATH_TO_DATA + "\\ImaginedSpeechData\\" + subject.name + '\\GAM'
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+
+        # Plot the raw eeg data
+        plt.close(subject.eeg_data.plot(color='darkblue').savefig(save_path + '\\Raw_EEG'))
+
+        # Plot the raw eeg psd
+        #plt.close(subject.eeg_data.plot_psd(area_mode='range', tmax=10.0).savefig(save_path + "\\Raw_EEG_PSD"))
+
+        # Plot the raw eeg psd with Fmax of 50Hz
+        #plt.close(subject.eeg_data.plot_psd(fmax=50).savefig(save_path + "\\Raw_EEG_PSD_f50"))
+
+        # Copy the data sets we need to maintain a raw and filtered copy of the data
+        raw = subject.eeg_data.copy()
+        filtered = subject.eeg_data.copy()
+        ica_data = subject.eeg_data.copy()
+
+        #raw.set_eeg_reference('average', projection=False)
+        #filtered.set_eeg_reference('average', projection=False)
+        #ica_data.set_eeg_reference('average', projection=False)
+
+        print("✅ 已应用全脑平均参考（CAR）")
+
+        # Bandpass filter between 1Hz and 50Hz (also removes power line noise ~60Hz)
+        #filtered = filtered.notch_filter(freqs=60, notch_widths=1, fir_design='firwin')
+        #raw = raw.notch_filter(freqs=np.array((60, 120, 180, 240)), notch_widths=1, fir_design='firwin')
+        ica_data = ica_data.notch_filter(freqs=60, notch_widths=1, fir_design='firwin')
+        #filtered.filter(0.5, None, fir_design='firwin')
+        #filtered.filter(None, 104., fir_design='firwin')
+        #ica_data.filter(None, 104., fir_design='firwin')
+        #ica_data.filter(0.5, None, fir_design='firwin')
+        ica_data = run_mne_ica_pipeline(ica_data, PATH_TO_DATA + "\\ImaginedSpeechData\\" + subject.name + '\\GAM')
+
+        # Create events matrix required to define epochs in mne.Epochs
+        events = copy.deepcopy(subject.epoch_inds['thinking_inds'])
+        events = np.reshape(events, (events.shape[1], 1))
+        prompts = []
+        for event in events:
+            prompts.append(event[0][0])
+
+        i = 0
+        for prompt in prompts:
+            prompt[1] = 0
+            prompts[i] = np.append(prompt, np.array(subject.prompts[5][0][i][0]))
+            i += 1
+
+        prompts = np.asarray(prompts)
+        # All prompts need to be int format
+        prompts = np.where(prompts == '/iy/', 0, prompts)
+        prompts = np.where(prompts == '/uw/', 1, prompts)
+        prompts = np.where(prompts == '/piy/', 2, prompts)
+        prompts = np.where(prompts == '/tiy/', 3, prompts)
+        prompts = np.where(prompts == '/diy/', 4, prompts)
+        prompts = np.where(prompts == '/m/', 5, prompts)
+        prompts = np.where(prompts == '/n/', 6, prompts)
+        prompts = np.where(prompts == 'pat', 7, prompts)
+        prompts = np.where(prompts == 'pot', 8, prompts)
+        prompts = np.where(prompts == 'knew', 9, prompts)
+        prompts = np.where(prompts == 'gnaw', 10, prompts)
+
+        # sanity check
+        prompts = prompts.astype(int)
+        print('MNE event_id array for epoching:')
+        print(prompts[:5])
+
+        # Create event identification dictionary
+        event_id = {'/iy/': 0, '/uw/': 1, '/piy/': 2, '/tiy/': 3, '/diy/': 4, '/m/': 5,
+                    '/n/': 6, 'pat': 7, 'pot': 8, 'knew': 9, 'gnaw': 10}
+
+        # This epochs the data according to the array prompts defined above
+        #epochs_filtered = mne.Epochs(filtered, prompts, event_id, tmin=-2.0, tmax=5.0, baseline=(-2.0, 0), preload=False)
+        #epochs_raw = mne.Epochs(raw, prompts, event_id, tmin=-0.6, tmax=5.0, baseline=None, preload=False)
+        epochs_ica = mne.Epochs(ica_data, prompts, event_id, tmin=-2.0, tmax=5.0, baseline=(-2.0, 0), preload=False)
+        del events, prompts
+
+
+        # Plot of the filtered eeg data that corresponds to the ICA components
+        #plt.close(filtered.plot(color='darkblue').savefig(save_path + "\\Filtered_EEG_Data"))
+
+        #epochs_raw.save(save_path + "\\epochs_raw.fif", overwrite=True)
+
+        #epochs_filtered.save(save_path + "\\epochs_filtered.fif",overwrite=True)
+        #epochs_ica.save(save_path + "\\epochs_ica.fif")
+        # Create pandas dataframes of the epoch data (raw, filtered, and filtered with only ICA components)
+        #df_epochs_raw = epochs_raw.to_data_frame()
+        #df_epochs_filtered = epochs_filtered.to_data_frame()
+        df_epochs_ica = epochs_ica.to_data_frame()
+
+        print(f"Saved data for subject {subject.name}.")
+        #df_epochs_raw.to_pickle(save_path + "\\df_epochs_raw.pkl")
+        #df_epochs_filtered.to_pickle(save_path + "\\df_epochs_filtered.pkl")
+        df_epochs_ica.to_pickle(save_path + "\\df_epochs_ica_ne.pkl")
+
+
+if __name__ == "__main__":
+    main()
