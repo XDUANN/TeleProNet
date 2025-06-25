@@ -1,6 +1,8 @@
 """
 This code is from MDS_Kara_One, by Matt-Golightly, many thanks to him! It was his code that helped me with this whole project, love you! Thank you!
 
+we use raw=True !!! remember!
+
  This is an adaptation of the work by Wojciech Błądek https://github.com/wjbladek/SilentSpeechClassifier, used for automated
   data handling for the KARA ONE open source EEG data on imagined speech.
 
@@ -417,119 +419,6 @@ class Dataset:
         ica.apply(self.eeg_data)
         if ica_type != "saved":
             ica.save(self.name + "-ica.fif")
-
-
-    def prepare_data(self, prompts_list=None, scale_data=False):
-        """Prepare labels and extract EEG data.
-
-        Parameters
-        ----------
-        prompts_list : dict
-            A dictionary, containing chosen prompts as keys
-            and their categories as their respective values.
-        scale_data : bool
-            Scales features values with 'Sklearn.StandardScaler()'.
-            Some ML algorithms demand scaled data to work properly.
-
-        Returns
-        -------
-        X : ndarray
-            3D array of EEG signals (shape: B x C x T).
-        Y : ndarray
-            1D array of labels (shape: B).
-        """
-
-        def _extract_eeg_data(condition_inds, prompts_list):
-            print("Extracting EEG data.")
-            offset = int(self.eeg_data.info["sfreq"] / 2)
-            X = []
-            target_duration = 4996  # Target duration in ms (e.g., 5011 ms)
-            for i, prompt in enumerate(self.prompts["prompts"][0]):
-                if prompt[0] in prompts_list:
-                    start = self.epoch_inds[condition_inds][0][i][0][0] + offset
-                    end = self.epoch_inds[condition_inds][0][i][0][1]
-                    # Ensure fixed duration for all epochs
-                    epoch_duration = end - start
-                    if epoch_duration > target_duration:
-                        # If the epoch is too long, truncate it
-                        end = start + target_duration
-                    elif epoch_duration < target_duration:
-                        # If the epoch is too short, pad it (if necessary)
-                        end = start + target_duration  # Optionally pad here
-
-                    # Create a list for channels
-                    channel_data = []
-                    for idx, ch in enumerate(self.eeg_data.ch_names):
-                        epoch = self.eeg_data[idx][0][0][start:end]
-                        channel_data.append(epoch)  # Append EEG signal (time series) for each channel
-                    X.append(np.array(channel_data))  # Now X will have shape (C, T) for each sample
-            return X
-
-        t0 = time()
-        Y = []
-        if type(prompts_list) is dict:
-            print('Making custom categories.')
-            for prompt in self.prompts["prompts"][0]:
-                if prompt[0] in prompts_list:
-                    Y.append(prompts_list[prompt[0]])  # Use the prompt's corresponding category
-            X = _extract_eeg_data("thinking_inds", prompts_list.keys())
-        else:
-            print('Rest vs active.')
-            Y = self.prompts["prompts"][0]
-            X = _extract_eeg_data("clearing_inds", Y)
-            X.extend(_extract_eeg_data("thinking_inds", Y))
-            Y = np.hstack([np.repeat('rest', len(X) / 2), np.repeat('active', len(X) / 2)])
-
-        print("EEG data extracted.\nDone in %0.3fs" % (time() - t0))
-
-        # Convert to numpy arrays for easy manipulation
-        self.X = np.stack(X, axis=0)  # Concatenate along the first axis (epochs)
-        self.Y = np.array(Y)  # Convert labels to a numpy array
-
-        # If scaling is needed, apply StandardScaler
-        if scale_data:
-            print("Scaling data.")
-            self.X = np.array(
-                [StandardScaler().fit_transform(x.T).T for x in self.X])  # Scale each sample's (C, T) independently
-
-        return self.X, self.Y
-
-
-    def GAF(self):
-        from pyts.image import GramianAngularField
-        from sklearn.pipeline import make_pipeline
-
-        from PIL import Image
-        import matplotlib.pyplot as plt
-        from mpl_toolkits.axes_grid1 import ImageGrid
-
-        self.gasf = []
-        self.gadf = []
-        #i=1
-        for trial in self.eeg_data['EEG_Data']['activeEEG']:
-
-            # GAM sum and diff for full time trial
-            gasf = GramianAngularField(image_size=trial.shape[1], method='summation')
-            gadf = GramianAngularField(image_size=trial.shape[1], method='difference')
-
-            # GAM sum and diff reduced to 224x224 (densenet size)
-            #gasf = GramianAngularField(image_size=224, method='summation')
-            #gadf = GramianAngularField(image_size=224, method='difference')
-
-            X_gasf = gasf.fit_transform(trial)
-            X_gadf = gadf.fit_transform(trial)
-
-            GAMpath = self.dataPath + "\\GAM"
-            Path(GAMpath).mkdir(parents=True, exist_ok=True)
-            os.chdir(GAMpath)
-            Path("\\gnaw").mkdir(parents=True, exist_ok=True)
-            Path(GAMpath).mkdir(parents=True, exist_ok=True)
-            #sum_file = "gasf_trial" + str(i) + ".npy"
-            #diff_file = "gasd_trial" + str(i) + ".npy"
-            #np.save(sum_file, X_gasf2)  # save
-            #np.save(diff_file, X_gadf2)  # save
-            #i += 1
-            #del gasf, gadf, gasf2, gadf2
 
 
 if __name__ == '__main__':
