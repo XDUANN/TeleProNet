@@ -7,7 +7,7 @@ First: run first step: get the data and labels.py, this step will get the Kara O
 Second: run Kara One data Processing and epoching.py, this is the most important step for processing the data and get the labels ,
 also,this will filtering and do ica for data,and save the processed data as .pkl file,this is the best format to save,(some kind of reservation methods will cause fault)
 
-Third，run network training and test.py， this is the all work I did in this Project,most of the code is written by GPT(hahahaha),
+Third： run network training and test.py， this is the all work I did in this Project,most of the code is written by GPT(hahahaha),
 this file contains the labels encoding for model input,hibert transform and FIR filtering, and channel selection ,and network structure, 
 and Prototype network construction and training
 
@@ -15,7 +15,7 @@ Kara One dataset,you can download in here:https://www.cs.toronto.edu/~complingwe
 
 valuation Protocol: Leave-One-Subject-Out (LOSO)
 
-This project strictly follows a Leave-One-Subject-Out (LOSO) cross-validation protocol to ensure subject-independent evaluation and eliminate any risk of data leakage. For each evaluation fold:
+(This project strictly follows a Leave-One-Subject-Out (LOSO) cross-validation protocol to ensure subject-independent evaluation and eliminate any risk of data leakage. For each evaluation fold:
 
     One subject is held out as the test set.
 
@@ -39,7 +39,7 @@ To prevent any potential data leakage, the data loading and processing pipeline 
     The episode construction function create_episode_diverse_support_balanced_query() ensures that the support and query samples come from different subjects, further reinforcing subject-level independence during few-shot training.
 
     Reproducible Protocol:
-    All data processing is done dynamically within each training fold. No precomputed shared artifacts (e.g., global PCA, scaling) are reused across folds.
+    All data processing is done dynamically within each training fold. No precomputed shared artifacts (e.g., global PCA, scaling) are reused across folds.)
     
 finally, if you have any question,please concat me  Wechat：CMU_ann (15291835753), email:xduann@163.com 
 and my telephone number:+86 15291835753
