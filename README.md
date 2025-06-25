@@ -13,7 +13,7 @@ by the way, before run this file,you must change the path to your dataset in "PA
 Third： run network training and test.py， this is the all work I did in this Project,most of the code is written by GPT(hahahaha),
 this file contains the labels encoding for model input,hibert transform and FIR filtering, and channel selection ,and network structure, 
 and Prototype network construction and training
-and the same, before run this file,you must change the path to your dataset in "PATH_TO_DATA = "D:/Downloads/KARA_ONE_Data/" ,
+  and the same, before run this file,you must change the path to your dataset in "PATH_TO_DATA = "D:/Downloads/KARA_ONE_Data/" ,
 and change your save path in here: "save_path_to_data = "E:/迅雷下载/xduer-SI-15600-5/",which is in line 1350
 
 Kara One dataset,you can download in here:https://www.cs.toronto.edu/~complingweb/data/karaOne/karaOne.html
