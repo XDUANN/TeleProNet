@@ -1,6 +1,6 @@
 """
 This code is from MDS_Kara_One, by Matt-Golightly, many thanks to him! It was his code that helped me with this whole project, love you! Thank you!
-
+This is the second file you'll run, containing the pre-processing of the EEG signal, filtering and ICA
  """
 
 import numpy as np
@@ -224,7 +224,7 @@ def main():
         print(f"Saved data for subject {subject.name}.")
         #df_epochs_raw.to_pickle(save_path + "\\df_epochs_raw.pkl")
         #df_epochs_filtered.to_pickle(save_path + "\\df_epochs_filtered.pkl")
-        df_epochs_ica.to_pickle(save_path + "\\df_epochs_ica_ne.pkl")
+        df_epochs_ica.to_pickle(save_path + "\\df_epochs_ica.pkl")
 
 
 if __name__ == "__main__":
