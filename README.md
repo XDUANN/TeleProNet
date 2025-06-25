@@ -13,7 +13,7 @@ and Prototype network construction and training
 
 Kara One dataset,you can download in here:https://www.cs.toronto.edu/~complingweb/data/karaOne/karaOne.html
 
-valuation Protocol: Leave-One-Subject-Out (LOSO)
+Evaluation Protocol: Leave-One-Subject-Out (LOSO)
 
 (This project strictly follows a Leave-One-Subject-Out (LOSO) cross-validation protocol to ensure subject-independent evaluation and eliminate any risk of data leakage. For each evaluation fold:
 
