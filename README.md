@@ -2,6 +2,8 @@
 
 # TeleProNet: A Prototype-Based Multi-Band EEG Network Designed for Telepathic Communication
 Imagined Speech Decoding Based on Prototype Networks, in EEG, Multiband Fusion and Delta Band Complementation
+our paper is here:[论文最终稿 8.pdf](https://github.com/user-attachments/files/20952707/8.pdf)
+
 Acknowledgments: The data acquisition and data preprocessing at the beginning of this code came from MDS_Kara_One, by Matt-Golightly, thank you very much! It was his code that helped me with this whole project, love you! Thank you! 
 Their code is at https://github.com/Matt-Golightly/MDS_Kara_One.git
 
