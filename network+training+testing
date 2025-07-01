@@ -32,9 +32,9 @@ import random
 import itertools
 from scipy.signal import butter, filtfilt
 from scipy.signal import hilbert
-#import dtcwt
-#from dtcwt import Pyramid
-#from dtcwt.numpy import Transform1d
+import dtcwt
+from dtcwt import Pyramid
+from dtcwt.numpy import Transform1d
 from scipy.fft import fft, ifft
 # from scipy.signal import resample
 from joblib import Parallel, delayed
@@ -186,7 +186,7 @@ def extract_features_and_labels(df, label_col='condition', epoch_col='epoch', ti
 
 def augment_data_eeg_minimal(data, noise_level=0.3, max_shift=15):
     """
-    对 EEG 数据 (B, C, T) 进行简化增强（加噪 + 时间平移），这个项目中没有用到
+    对 EEG 数据 (B, C, T) 进行简化增强（加噪 + 时间平移）。
 
     参数:
     - data: ndarray, EEG 信号，形状为 (n_trials, n_channels, n_samples)
@@ -231,7 +231,7 @@ def augment_data_eeg_bandwise(
         mask_length=20
 ):
     """
-    针对不同频段特征类型的 EEG 增强：（这个项目中没有用到）
+    针对不同频段特征类型的 EEG 增强：
     - band 0: beta 原始 EEG（保留相位）
     - band 1: low-gamma envelope
     - band 2: high-gamma envelope
@@ -291,7 +291,7 @@ def augment_data_eeg_bandwise(
 
 def mix_and_expand_data(train_x, train_y, augmentation_function, augment_ratio=0.3):
     """
-    混合和扩展数据 （这个项目中没有用到）
+    混合和扩展数据
     """
     total_samples = len(train_x)
     num_augmented = int(total_samples * augment_ratio)
@@ -316,7 +316,7 @@ def mix_and_expand_data(train_x, train_y, augmentation_function, augment_ratio=0
 
 def mix_and_expand_data_with_subjects(train_x, train_y, subject_labels, augmentation_function, augment_ratio=0.3):
     """
-    对 EEG 数据和 subject_labels 一起做增强和扩展。（这个项目中没有用到）
+    对 EEG 数据和 subject_labels 一起做增强和扩展。
     """
     total_samples = len(train_x)
     num_augmented = int(total_samples * augment_ratio)
@@ -566,7 +566,7 @@ class SqueezeExcite(nn.Module):
         return x
 
 
-class TeleProNet(nn.Module):
+class DenseNet1D(nn.Module):
     def __init__(self, in_channels=48, mid_channels=64, hidden_dims=[64, 64],
                  dropout_rate=0.1, num_classes=11):
         super().__init__()
@@ -705,7 +705,7 @@ class EEGRegionModel(nn.Module):
 
         self.num_bands = 6
 
-        self.TeleNet = TeleProNet()
+        self.convLSTM1 = DenseNet1D()
 
         self.pos_embedding = nn.Parameter(torch.randn(1, 3844, 128))
 
@@ -723,7 +723,7 @@ class EEGRegionModel(nn.Module):
         beta_input = x[:, 2]
         gamma_input = x[:, 3]
 
-        output = self.TeleNet(delta_input, mu_input, beta_input, gamma_input)
+        output = self.convLSTM1(delta_input, mu_input, beta_input, gamma_input)
 
         return output
 
@@ -863,102 +863,6 @@ def compute_phase_envelope(epoch_band, batch_size=64, fs=500, cutoff=5):
     return envelope_z
 
 
-# === 1. 创建 Prototypical Network 的 Episode ===
-def create_episode(X, y, n_way=11, k_shot=5, q_query=10):
-    device = X.device
-    classes = torch.unique(y).cpu()
-    assert len(classes) >= n_way, f"数据中类别数不足 {n_way}"
-
-    selected_classes = classes[torch.randperm(len(classes))[:n_way]]
-    support_x, support_y, query_x, query_y = [], [], [], []
-
-    for i, cls in enumerate(selected_classes):
-        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
-        if len(cls_idx) < k_shot + q_query:
-            raise ValueError(f"类别 {cls.item()} 的样本数不足（需要 {k_shot + q_query}）")
-        selected = cls_idx[torch.randperm(len(cls_idx))[:k_shot + q_query]]
-        support_x.append(X[selected[:k_shot]])
-        query_x.append(X[selected[k_shot:]])
-        support_y.append(torch.full((k_shot,), i, device=device))
-        query_y.append(torch.full((q_query,), i, device=device))
-
-    x = torch.cat(support_x + query_x, dim=0)
-    y_ep = torch.cat(support_y + query_y, dim=0)
-
-    return x, y_ep
-
-
-def create_episode_diverse_support_fixed_query_subject(X, y, subject_labels, n_way=11, k_shot=5, q_query=10):
-    """
-    - Support: 来自不同的受试者，每个样本一个受试 （这个函数在项目中没有用到）
-    - Query: 从一个未被 support 使用的受试者中选取
-    """
-    import torch
-    import random
-
-    assert X.shape[0] == y.shape[0] == subject_labels.shape[0], "🚨 输入数量不匹配！"
-    assert subject_labels.device == y.device and y.device == X.device, "🚨 所有输入应在同一 device！"
-
-    device = X.device
-    classes = torch.unique(y)
-    assert len(classes) >= n_way, f"类别数不足 {n_way}"
-
-    selected_classes = classes[torch.randperm(len(classes))[:n_way]]
-    support_x, support_y, query_x, query_y = [], [], [], []
-
-    for i, cls in enumerate(selected_classes):
-        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
-        cls_subjs = subject_labels[cls_idx]
-        unique_subs = torch.unique(cls_subjs)
-
-        if len(cls_idx) < k_shot + q_query or len(unique_subs) < 2:
-            continue
-
-        # ✅ 尽可能从不同受试者中选择 support（每人一个样本）
-        support_idx = []
-        support_subs_selected = []
-        candidate_subs = unique_subs.tolist()
-        random.shuffle(candidate_subs)
-
-        for subj in candidate_subs:
-            subj_idx = cls_idx[(cls_subjs == subj).nonzero(as_tuple=True)[0]]
-            if len(subj_idx) == 0:
-                continue
-            pick = subj_idx[torch.randint(0, len(subj_idx), (1,)).item()]
-            support_idx.append(pick.item())
-            support_subs_selected.append(subj)
-            if len(support_idx) >= k_shot:
-                break
-
-        if len(support_idx) < k_shot:
-            continue
-
-        # ✅ Query 从未用过的受试中选一个人
-        remaining_subs = [s for s in unique_subs.tolist() if s not in support_subs_selected]
-        if len(remaining_subs) == 0:
-            continue
-
-        query_subj = random.choice(remaining_subs)
-        query_pool = cls_idx[(cls_subjs == query_subj).nonzero(as_tuple=True)[0]]
-        if len(query_pool) < q_query:
-            continue
-
-        q_sel = query_pool[torch.randperm(len(query_pool))[:q_query]]
-        s_sel = torch.tensor(support_idx, device=device)
-
-        support_x.append(X[s_sel])
-        query_x.append(X[q_sel])
-        support_y.append(torch.full((k_shot,), i, dtype=torch.long, device=device))
-        query_y.append(torch.full((q_query,), i, dtype=torch.long, device=device))
-
-    if not support_x or not query_x:
-        raise ValueError("❌ 无法构造有效 episode，请检查数据是否足够")
-
-    x_ep = torch.cat(support_x + query_x, dim=0)
-    y_ep = torch.cat(support_y + query_y, dim=0)
-    return x_ep, y_ep
-
-
 def create_episode_diverse_support_balanced_query(X, y, subject_labels, n_way=11, k_shot=5, q_query=10):
     """
     每个 episode 构造：
@@ -1042,6 +946,79 @@ def create_episode_diverse_support_balanced_query(X, y, subject_labels, n_way=11
     x_ep = torch.cat(support_x + query_x, dim=0)
     y_ep = torch.cat(support_y + query_y, dim=0)
     return x_ep, y_ep
+
+
+def create_fixed_test_episode(X, y, n_way=11, k_shot=3, q_query=4):
+    """
+    用于测试阶段，固定 class 语义（0-10 对应具体标签），使得混淆矩阵有意义
+    """
+    device = X.device
+    support_x, support_y, query_x, query_y = [], [], [], []
+
+    for cls in range(n_way):  # 固定顺序！
+        cls_idx = (y == cls).nonzero(as_tuple=True)[0]
+        if len(cls_idx) < k_shot + q_query:
+            raise ValueError(f"类别 {cls} 样本不足：{len(cls_idx)}")
+
+        selected = cls_idx[torch.randperm(len(cls_idx))[:k_shot + q_query]]
+        support_x.append(X[selected[:k_shot]])
+        query_x.append(X[selected[k_shot:]])
+        support_y.append(torch.full((k_shot,), cls, device=device))
+        query_y.append(torch.full((q_query,), cls, device=device))
+
+    x = torch.cat(support_x + query_x, dim=0)
+    y_ep = torch.cat(support_y + query_y, dim=0)
+    return x, y_ep
+
+
+def evaluate_fixed_testset(model, data_x, data_y, save_dir=None, n_way=11, k_shot=3, q_query=4, n_episodes=100):
+    device = data_x.device
+    model.eval()
+    all_preds, all_targets = [], []
+
+    with torch.no_grad():
+        for _ in range(n_episodes):
+            x_ep, y_ep = create_fixed_test_episode(data_x, data_y, n_way, k_shot, q_query)
+            emb = model(x_ep)
+            _, _, preds, true = prototypical_loss(emb, y_ep, n_support=k_shot)
+            all_preds.append(preds)
+            all_targets.append(true)
+
+    all_preds = torch.cat(all_preds).cpu().numpy()
+    all_targets = torch.cat(all_targets).cpu().numpy()
+
+    acc = np.mean(all_preds == all_targets)
+    cm = confusion_matrix(all_targets, all_preds)
+    kappa = cohen_kappa_score(all_targets, all_preds)
+    recall = recall_score(all_targets, all_preds, average='macro')
+    precision = precision_score(all_targets, all_preds, average='macro')
+    f1 = f1_score(all_targets, all_preds, average='macro')
+    balanced_acc = balanced_accuracy_score(all_targets, all_preds)
+
+    # 绘制有标签的混淆矩阵
+    label_names = ['iy', 'uw', 'piy', 'tiy', 'diy', 'm', 'n', 'pat', 'pot', 'knew', 'gnaw']
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='.0f', cmap='RdPu', linewidths=0.3,
+                    xticklabels=label_names, yticklabels=label_names,
+                    cbar_kws={'label': 'Count'})
+        plt.title('Confusion Matrix (Fixed Class Order)', fontsize=16)
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, 'fixed_conf_matrix.png'))
+        plt.close()
+
+    return {
+        'accuracy': acc,
+        'balanced_accuracy': balanced_acc,
+        'kappa': kappa,
+        'recall': recall,
+        'precision': precision,
+        'f1': f1,
+        'confusion_matrix': cm
+    }
 
 
 # === 2. 原型网络损失函数 ===
@@ -1133,75 +1110,6 @@ def dual_metric_prototypical_loss(embeddings, targets, n_support, alpha=0.5):
     acc = (preds == query_targets).float().mean()
 
     return loss, acc, preds, query_targets
-
-
-# === 3. 验证 / 测试函数 ===
-def evaluate_protonet(model, data_x, data_y, save_dir=None, n_way=11, k_shot=5, q_query=10, n_episodes=1):
-    device = data_x.device
-    model.eval()
-    all_preds, all_targets = [], []
-
-    with torch.no_grad():
-        for _ in range(n_episodes):
-            x_ep, y_ep = create_episode(data_x, data_y, n_way, k_shot, q_query)
-            emb = model(x_ep)
-            _, _, preds, true = prototypical_loss(emb, y_ep, n_support=k_shot)
-            all_preds.append(preds)
-            all_targets.append(true)
-
-    all_preds = torch.cat(all_preds).cpu().numpy()
-    all_targets = torch.cat(all_targets).cpu().numpy()
-
-    acc = np.mean(all_preds == all_targets)
-    cm = confusion_matrix(all_targets, all_preds)
-    kappa = cohen_kappa_score(all_targets, all_preds)
-    recall = recall_score(all_targets, all_preds, average='macro')
-    precision = precision_score(all_targets, all_preds, average='macro')
-    f1 = f1_score(all_targets, all_preds, average='macro')
-    balanced_acc = balanced_accuracy_score(all_targets, all_preds)
-
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(cm, annot=True, fmt='.0f', cmap='RdPu', linewidths=0.3, linecolor='gray', square=True,
-                    cbar_kws={'label': 'Count'})
-        plt.title('Confusion Matrix', fontsize=16)
-        plt.xlabel('Predicted Label', fontsize=12)
-        plt.ylabel('True Label', fontsize=12)
-        plt.xticks(fontsize=10)
-        plt.yticks(fontsize=10)
-        plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, 'conf_matrix.png'))
-        plt.close()
-
-    return {
-        'accuracy': acc,
-        'balanced_accuracy': balanced_acc,
-        'kappa': kappa,
-        'recall': recall,
-        'precision': precision,
-        'f1': f1,
-        'confusion_matrix': cm
-    }
-
-
-def save_accuracy_plot(val_accs, val_checkpoints, save_dir, fold):
-    import matplotlib.pyplot as plt
-    import os
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(val_checkpoints, val_accs, label='Validation Accuracy', color='orange', marker='o')
-    plt.xlabel("Episode")
-    plt.ylabel("Validation Accuracy")
-    plt.title(f"Validation Accuracy Curve - Fold {fold}")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"val_accuracy_curve_fold{fold}.png")
-    plt.savefig(save_path)
-    plt.close()
 
 
 # 实验类，处理数据加载、训练和评估
@@ -1400,11 +1308,11 @@ class ExP():
         print(f"▶ Loading best model for subject {subject_id} for testing...")
         # self.model.load_state_dict(best_state)
         self.model.load_state_dict(torch.load(model_path))
-        test_metrics = evaluate_protonet(self.model,
+        test_metrics = evaluate_fixed_testset(self.model,
                                          test_x,
                                          test_y,
                                          save_dir=os.path.join(save_dir, f"subject_{subject_id}"),
-                                         n_way=11, k_shot=3, q_query=4, n_episodes=1000)
+                                         n_way=11, k_shot=3, q_query=4, n_episodes=100)
 
         with open(os.path.join(save_dir, f"subject_{subject_id}_results.txt"), "w") as f:
             for k, v in test_metrics.items():
@@ -1462,9 +1370,8 @@ def main():
         all_results.append(test_metrics)
         all_conf_matrices.append(test_metrics['confusion_matrix'])
 
-    # 汇总结果
+    # === 汇总结果 ===
     avg_metrics = {}
-
     keys = ['accuracy', 'balanced_accuracy', 'kappa', 'recall', 'precision', 'f1']
     for key in keys:
         avg_metrics[key] = np.mean([res[key] for res in all_results])
@@ -1473,9 +1380,13 @@ def main():
         for k, v in avg_metrics.items():
             f.write(f"Average {k}: {v:.4f}\n")
 
+    # === 混淆矩阵可视化 ===
     avg_cm = np.mean(all_conf_matrices, axis=0)
+    label_names = ['iy', 'uw', 'piy', 'tiy', 'diy', 'm', 'n', 'pat', 'pot', 'knew', 'gnaw']
+
     plt.figure(figsize=(10, 8))
     sns.heatmap(avg_cm, annot=True, fmt='.1f', cmap='RdPu', linewidths=0.3, linecolor='gray', square=True,
+                xticklabels=label_names, yticklabels=label_names,
                 cbar_kws={'label': 'Avg Count'})
     plt.title('Average Confusion Matrix Across Subjects', fontsize=16)
     plt.xlabel('Predicted Label', fontsize=12)
@@ -1485,6 +1396,8 @@ def main():
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, "average_confusion_matrix.png"))
     plt.close()
+
+    np.save(os.path.join(save_dir, "average_conf_matrix.npy"), avg_cm)
 
     print("✅ LOSO experiment complete. Results saved.")
 
