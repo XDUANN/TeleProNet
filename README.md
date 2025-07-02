@@ -13,7 +13,7 @@ Their code is at https://github.com/Matt-Golightly/MDS_Kara_One.git
 
 First: download the Kara One dataset in: https://www.cs.toronto.edu/~complingweb/data/karaOne/karaOne.html
 
-get the data and labels.py, this step will get the Kara One dataset, and do some primer processing
+MDS_SCRIPTS.py, this step will get the Kara One dataset, and do some primer processing
 
 Second: run Kara One data Processing and epoching.py, this is the most important step for processing the data and get the labels ,
 also,this will filtering and do ica for data,and save the processed data as .pkl file,this is the best format to save,(some kind of reservation methods will cause fault)
