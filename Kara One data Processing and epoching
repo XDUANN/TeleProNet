@@ -224,7 +224,7 @@ def main():
         print(f"Saved data for subject {subject.name}.")
         #df_epochs_raw.to_pickle(save_path + "\\df_epochs_raw.pkl")
         #df_epochs_filtered.to_pickle(save_path + "\\df_epochs_filtered.pkl")
-        df_epochs_ica.to_pickle(save_path + "\\df_epochs_ica.pkl")
+        df_epochs_ica.to_pickle(save_path + "\\df_epochs_ica_no.pkl")
 
 
 if __name__ == "__main__":
