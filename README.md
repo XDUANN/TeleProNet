@@ -20,7 +20,7 @@ Second: run Kara One data Processing and epoching.py, this is the most important
 also,this will filtering and do ica for data,and save the processed data as .pkl file,this is the best format to save,(some kind of reservation methods will cause fault)
 !!!by the way, before run this file,you must change the path to your dataset in "PATH_TO_DATA = "D:/Downloads/KARA_ONE_Data/"  ,
 
-Third： run network training and test.py， this is the all work I did in this Project,most of the code is written by GPT(hahahaha),
+Third： run network training and test.py， this is the all work I did in this Project,most of the code is written by GPT,
 this file contains the labels encoding for model input,hibert transform and FIR filtering, and channel selection ,and network structure, and Prototype network construction and training.
   !!!And the same, before run this file,you must change the path to your dataset in "PATH_TO_DATA = "D:/Downloads/KARA_ONE_Data/" ,
 and change your save path in here: "save_path_to_data = "E:/迅雷下载/xduer-SI-15600-5/",which is in line 1350
