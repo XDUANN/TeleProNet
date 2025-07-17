@@ -1,4 +1,4 @@
-![最终图](https://github.com/user-attachments/assets/aec87e7e-925e-487d-9c76-24eae1633091)
+![最终图](https://github.com/user-attachments/assets/75a0ea09-1054-49b2-8758-5d34b11cec66)
 
 # TeleProNet: An imaginary speech decoding Multi-Band EEG Network Designed for Telepathic Communication
 Imagined Speech Decoding Based on Prototype Networks, in EEG, Multiband Fusion and Delta Band Complementation.
